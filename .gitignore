@@ -7,3 +7,6 @@ __pycache__/
 # local project file
 data/
 results/
+
+# IntelliJ files
+.idea/
