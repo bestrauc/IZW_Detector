@@ -1,3 +1,9 @@
+# python module cache
 __pycache__/
 
+# jupyter notebook checkpoints
 .ipynb_checkpoints/
+
+# local project file
+data/
+results/
