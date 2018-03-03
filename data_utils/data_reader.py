@@ -151,9 +151,10 @@ def read_dir_metadata(dir_path, detect_dataset=True, extend_events=True):
             if (data.timeoffset.values[i] >= np.timedelta64(0, "s")) and \
                     (data.timeoffset.values[i] < np.timedelta64(window_secs, "s")) and \
                     (data.serial_no.values[i] == data.serial_no.values[i - 1]):
-
                 current_key = last_key
+
             event_keys.append(current_key)
+
         data["event_key"] = event_keys
 
     data = []
@@ -209,7 +210,9 @@ def read_dir_metadata(dir_path, detect_dataset=True, extend_events=True):
     data = pandas.DataFrame(data)
     add_event_keys(data)
     check_duplicates(data)
-    data = data.sort_values("sortkey")
+
+    # sort by the sortkey we constructed and break ties by filename
+    data = data.sort_values(by=["sortkey", 'filename'])
     data["timeoffset"] = data.datetime.diff()
 
     if extend_events:
