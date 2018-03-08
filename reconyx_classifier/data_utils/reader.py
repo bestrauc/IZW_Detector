@@ -72,7 +72,7 @@ INFOS = [
 ]
 
 
-def unpack(makernote):
+def _unpack(makernote):
     global INFOS
 
     makernote_bin = array.array('B', makernote)
@@ -84,13 +84,13 @@ def unpack(makernote):
     return res
 
 
-def read_im_exif(file_path):
+def _read_im_exif(file_path):
     tags = None
 
     with open(file_path, 'rb') as f:
         tags = exifread.process_file(f)
 
-    return unpack(tags['EXIF MakerNote'].values)
+    return _unpack(tags['EXIF MakerNote'].values)
 
 
 def read_dir_metadata(dir_path, detect_dataset=True, extend_events=True):
@@ -182,7 +182,7 @@ def read_dir_metadata(dir_path, detect_dataset=True, extend_events=True):
                 label = 'cheetah'
 
             full_file_path = root + '/' + file_path
-            meta = read_im_exif(full_file_path)
+            meta = _read_im_exif(full_file_path)
 
             s, m, h, M, D, Y = meta["Date/Time Original"]
             row = {
