@@ -1,3 +1,9 @@
+import pandas as pd
+import keras.models
+
+
+# from keras.models import load_model
+
 class ImageClassifier:
     """The image classifier for the Reconxy images.
 
@@ -13,7 +19,4 @@ class ImageClassifier:
             The model should output a softmax activation of the classes.
         """
 
-
-
-if __name__ == '__main__':
-    print("Mane")
+        self.model = keras.models.load_model(model_path)
