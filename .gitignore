@@ -1,5 +1,6 @@
 # python module cache
 __pycache__/
+*.pyc
 
 # jupyter notebook checkpoints
 .ipynb_checkpoints/
