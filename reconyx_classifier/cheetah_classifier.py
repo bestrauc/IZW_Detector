@@ -4,7 +4,6 @@ import argparse
 import logging
 
 
-
 def parse_arguments():
     """ Parse the sys.argv command line arguments.
     :return: A NameSpace object with the parsed arguments.
@@ -18,6 +17,10 @@ def parse_arguments():
 
     required.add_argument('--model', required=True,
                           help="Stored Keras model to load for classification.")
+
+    optional.add_argument('--batch_size', type=int, default=1,
+                          metavar='N',
+                          help="Batch size to use for classification.")
 
     optional.add_argument('--copy_output', action='store_true',
                           help="Copy classified images to output directories.")
@@ -44,17 +47,20 @@ def main():
 
     log.info("Loading model from '{}'".format(args.model))
     try:
-        # im_class = ImageClassifier(args.model)
+        im_class = ImageClassifier(args.model, args.batch_size)
         log.info("Model successfully loaded")
     except OSError as err:
         log.error("OS error: {}".format(err))
         sys.exit(1)
 
-    # im_class.classify_directory(args.directory)
     log.info("Classifying images in '{}'".format(args.directory))
-    # read_dir_metadata(args.directory)
     data = read_dir_metadata(args.directory)
-    print(data.head(10))
+    print(data.head(20))
+    print("================")
+    im_class.classify_data(data, class_labels=['unknown', 'cheetah', 'leopard'])
+
+    print(data.head(20))
+    print("================")
     # input("Press any key to continue.")
 
 
