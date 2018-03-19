@@ -49,7 +49,8 @@ class ImageClassifier:
     but at most one class per image currently (e.g. Cheetah or Leopard).
     """
 
-    def __init__(self, model_path: str, batch_size: int):
+    def __init__(self, model_path: str, batch_size: int,
+                 class_labels: List[str]):
         """Initialized the classifier with a Keras model.
 
         :param model_path: string
@@ -57,14 +58,17 @@ class ImageClassifier:
             The model should output a softmax activation of the classes.
         :param batch_size: int
             Batch size to use for classification.
+        :param class_labels: List[str]
+            Labels of the prediction, e.g. ['cheetah', 'leopard', 'unknown']
         """
 
         # log.info("Initializing ImageClassifier")
         self.model = keras.models.load_model(model_path)
         self.batch_size = batch_size
+        self.class_labels = class_labels
 
     def classify_data(self, data: pd.DataFrame,
-                      class_labels: List[str]) -> pd.DataFrame:
+                      classify_events: bool = True) -> pd.DataFrame:
         """Classify the data described by a Pandas dataframe.
 
         :param data: pandas.DataFrame
@@ -72,20 +76,36 @@ class ImageClassifier:
             file path - path to the image file
             simple_event_key - the event the image belongs to
             event_key - the extended event when 3-image events are merged
-        :param class_labels: List[str]
-            Labels of the prediction, e.g. ['cheetah', 'leopard', 'unknown']
+        :param classify_events: bool
+            Whether to classify images in an event together. Event-
+            resolution classification uses the class with strongest
+            prediction confidence in any image as the event label.
 
         :returns: pandas.DataFrame
             The data frame, with a new 'label' column.
         """
 
-        # build a sequence of images+metadata from the dataframe
+        # build a sequence of images+metadata from the DataFrame
         data_seq = DataFrameSequence(data, self.batch_size)
 
-        predictions = self.model.predict_generator(
-                data_seq, use_multiprocessing=True, verbose=1)
+        preds = self.model.predict_generator(
+            data_seq, use_multiprocessing=True, verbose=1)
 
-        data['label'] = np.argmax(predictions, axis=1)
+        # store prediction probabilities in the DataFrame
+        data['predict_probs'] = preds.tolist()
+
+        # store the labels in the DataFrame. could just store indices
+        # and resolve labels later, but for convenience we do it here
+        if not classify_events:
+            data['label'] = np.take(self.class_labels, np.argmax(preds, axis=1))
+        else:
+            # event gets the label of the maximum confidence prediction
+            group_label = lambda x: np.argmax(np.concatenate(x.tolist())) \
+                                    % len(self.class_labels)
+
+            data['label'] = data['predict_probs'].\
+                            groupby(data['event_key_simple']).\
+                            transform(group_label)
 
         return data
 

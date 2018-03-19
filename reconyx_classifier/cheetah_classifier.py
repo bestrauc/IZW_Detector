@@ -47,7 +47,8 @@ def main():
 
     log.info("Loading model from '{}'".format(args.model))
     try:
-        im_class = ImageClassifier(args.model, args.batch_size)
+        im_class = ImageClassifier(args.model, args.batch_size,
+                                   ['unknown', 'cheetah', 'leopard'])
         log.info("Model successfully loaded")
     except OSError as err:
         log.error("OS error: {}".format(err))
@@ -57,7 +58,7 @@ def main():
     data = read_dir_metadata(args.directory)
     print(data.head(20))
     print("================")
-    im_class.classify_data(data, class_labels=['unknown', 'cheetah', 'leopard'])
+    im_class.classify_data(data)
 
     print(data.head(20))
     print("================")
