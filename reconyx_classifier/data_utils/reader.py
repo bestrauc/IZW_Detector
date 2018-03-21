@@ -94,6 +94,15 @@ def _read_im_exif(file_path):
     with open(file_path, 'rb') as f:
         tags = exifread.process_file(f)
 
+    # try:
+    #     if str(tags['Image Make']) != 'RECONYX':
+    #         raise ValueError("Not a RECONYX JPG file.")
+    # except KeyError:
+    #     print("Error path: {}".format(file_path))
+    #     raise
+
+
+    # a RECONYX file should have a MakerNote.
     return _unpack(tags['EXIF MakerNote'].values)
 
 
@@ -105,7 +114,7 @@ def _make_exif_dict(image_path, file_name):
     exif_dict = {
         "filename": file_name,
         "path": image_path,
-        "set": 'none',
+        # "set": 'none',
         "datetime": datetime.datetime(Y, M, D, h, m, s),
         "event1": meta["Event Number"][0],
         "event2": meta["Event Number"][1],
@@ -197,8 +206,17 @@ def read_dir_metadata(dir_path: str, sort_vals=True):
     for filename in os.listdir(dir_path):
         if filename.lower().endswith((".jpg", ".jpeg")):
             file_path = os.path.join(dir_path, filename)
-            row = _make_exif_dict(file_path, filename)
+
+            # skip jpg file if it does not have the right EXIF tags
+            try:
+                row = _make_exif_dict(file_path, filename)
+            except Exception:
+                continue
+
             data.append(row)
+
+    if len(data) == 0:
+        raise FileNotFoundError("No image files found in directory")
 
     data = pandas.DataFrame(data)
     add_event_keys(data)
@@ -246,6 +264,7 @@ def read_training_metadata(dir_path: str, class_dir_names, extend_events=True):
                 print("Reading %s" % file_path)
                 set_data = read_dir_metadata(file_path)
                 set_data['label'] = label
+                set_data['set'] = 'none'
 
                 # append to existing data or create new if necessary
                 data = set_data if data is None \
