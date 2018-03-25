@@ -7,8 +7,10 @@ import datetime
 
 import pandas
 import numpy as np
+import pandas as pd
 
 import logging
+from typing import List
 
 log = logging.getLogger(__name__)
 
@@ -341,3 +343,26 @@ def read_training_metadata_old(dir_path: str, extend_events=True):
         _extend_event_keys(data)
 
     return data
+
+
+def classification_to_dir(out_dir: str, data: pd.DataFrame, labels: List[str]):
+    """Copy the labeled data to the output directory.
+
+    :param out_dir: str
+        The output directory for the sorted data.
+    :param data: pandas.DataFrame
+        The data, with image paths and class columns.
+    :param labels:
+        The label vector that will be indexed by the class number in the data.
+    """
+    for index, label in enumerate(labels):
+        target_dir = os.path.abspath(os.path.join(out_dir, label))
+        label_data = data[data.label == index]
+        if len(label_data) > 0:
+            # print("Creating dir {}".format(target_dir))
+            os.mkdir(target_dir)
+            for _, row in label_data.iterrows():
+                src_path = os.path.abspath(row['path'])
+                dst_path = os.path.join(target_dir, row['filename'])
+                # print("Copying {} to {}".format(src_path, dst_path))
+                os.symlink(src_path, dst_path)
