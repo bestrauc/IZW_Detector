@@ -10,8 +10,10 @@ from keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
 
 from typing import Generator, List
 
-# import logging
-# log = logging.getLogger(__name__)
+import logging
+log = logging.getLogger("classifier")
+
+# set TensorFlow log-level to warnings and above
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 predict_generator = ImageDataGenerator()
@@ -62,10 +64,11 @@ class ImageClassifier:
             Labels of the prediction, e.g. ['cheetah', 'leopard', 'unknown']
         """
 
-        # log.info("Initializing ImageClassifier")
+        log.info("Loading model from '{}'".format(model_path))
         self.model = keras.models.load_model(model_path)
         self.batch_size = batch_size
         self.class_labels = class_labels
+        log.info("Model successfully loaded")
 
     def classify_data(self, data: pd.DataFrame,
                       classify_events: bool = True) -> pd.DataFrame:
@@ -84,6 +87,10 @@ class ImageClassifier:
         :returns: pandas.DataFrame
             The data frame, with a new 'label' column.
         """
+
+        log.info("Classifying DataFrame {}.".format(
+            "WITH events" if classify_events else "WITHOUT events"
+        ))
 
         # build a sequence of images+metadata from the DataFrame
         data_seq = DataFrameSequence(data, self.batch_size)

@@ -1,7 +1,12 @@
 import sys
+import os
 import argparse
 
 import logging
+
+log = logging.getLogger(__name__)
+
+default_labels = ['unknown', 'cheetah', 'leopard']
 
 
 def parse_arguments():
@@ -37,32 +42,37 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
-
-    log = logging.getLogger(__name__)
-    logging.basicConfig(stream=sys.stdout, level=args.verbose)
+    logging.basicConfig(stream=sys.stdout, level=args.verbose,
+                        format="%(levelname)-7s - %(name)-10s - %(message)s")
 
     # import only after parsing to reduce startup delay
     from data_utils.classifier import ImageClassifier
-    from data_utils.reader import read_dir_metadata
+    from data_utils.io import read_dir_metadata, classification_to_dir
 
-    log.info("Loading model from '{}'".format(args.model))
+    log.info("Initializing ImageClassifier")
     try:
         im_class = ImageClassifier(args.model, args.batch_size,
-                                   ['unknown', 'cheetah', 'leopard'])
-        log.info("Model successfully loaded")
+                                   default_labels)
     except OSError as err:
         log.error("OS error: {}".format(err))
         sys.exit(1)
 
     log.info("Classifying images in '{}'".format(args.directory))
     data = read_dir_metadata(args.directory)
-    print(data.head(20))
-    print("================")
     im_class.classify_data(data)
 
-    print(data.head(20))
-    print("================")
-    # input("Press any key to continue.")
+    print()
+
+    if args.copy_output:
+        classified_path = args.directory.rstrip('/\\') + '_classified'
+        log.info("Creating dir {}".format(classified_path))
+        try:
+            os.mkdir(classified_path)
+        except FileExistsError as err:
+            log.error("Directory already exists.")
+            return
+
+        classification_to_dir(classified_path, data, default_labels)
 
 
 if __name__ == '__main__':

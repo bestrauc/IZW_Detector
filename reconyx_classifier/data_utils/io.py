@@ -1,3 +1,5 @@
+from typing import List
+
 import os
 import struct
 import array
@@ -5,14 +7,15 @@ import array
 import exifread
 import datetime
 
-import pandas
 import numpy as np
 import pandas as pd
 
 import logging
-from typing import List
+log_in = logging.getLogger("reader")
+log_out = logging.getLogger("writer")
 
-log = logging.getLogger(__name__)
+# only ever log warnings from the external exifread library
+logging.getLogger('exifread').setLevel(logging.WARN)
 
 
 class Info(object):
@@ -134,7 +137,7 @@ def _make_exif_dict(image_path, file_name):
     return exif_dict
 
 
-def _check_duplicates(data: pandas.DataFrame):
+def _check_duplicates(data: pd.DataFrame):
     # group into distinct events (usually 3 images per event)
     event_groups = data.groupby('event_key_simple')
 
@@ -162,7 +165,7 @@ def _check_duplicates(data: pandas.DataFrame):
     data['duplicates'] = duplicate_col
 
 
-def _extend_event_keys(data: pandas.DataFrame, window_secs=10):
+def _extend_event_keys(data: pd.DataFrame, window_secs=10):
     """ Merge subsequent events from the same camera if they occur closely enough.
 
     Duplicate frames are also removed.
@@ -204,6 +207,7 @@ def read_dir_metadata(dir_path: str, sort_vals=True):
         data["sortkey"] = data.event_key_simple.astype(str) + \
                           data.datetime.values.astype(np.int64).astype(str)
 
+    log_in.info("Scanning directory '{}'".format(dir_path))
     data = []
     for filename in os.listdir(dir_path):
         if filename.lower().endswith((".jpg", ".jpeg")):
@@ -213,6 +217,9 @@ def read_dir_metadata(dir_path: str, sort_vals=True):
             try:
                 row = _make_exif_dict(file_path, filename)
             except Exception:
+                log_in.warning("Skipping file '{}' - wrong EXIF data".format(
+                    os.path.basename(file_path)
+                ))
                 continue
 
             data.append(row)
@@ -220,10 +227,11 @@ def read_dir_metadata(dir_path: str, sort_vals=True):
     if len(data) == 0:
         raise FileNotFoundError("No image files found in directory")
 
-    data = pandas.DataFrame(data)
+    data = pd.DataFrame(data)
     add_event_keys(data)
 
     if sort_vals:
+        log_in.info("Sorting data rows.")
         data = data.sort_values(by=["sortkey"])
 
     return data
@@ -270,7 +278,7 @@ def read_training_metadata(dir_path: str, class_dir_names, extend_events=True):
 
                 # append to existing data or create new if necessary
                 data = set_data if data is None \
-                    else pandas.concat([data, set_data], ignore_index=True)
+                    else pd.concat([data, set_data], ignore_index=True)
                 found_dirs += 1
                 break
 
@@ -331,7 +339,7 @@ def read_training_metadata_old(dir_path: str, extend_events=True):
             if data is None:
                 data = set_data
             else:
-                data = pandas.concat([data, set_data])
+                data = pd.concat([data, set_data])
 
     _check_duplicates(data)
 
@@ -355,14 +363,16 @@ def classification_to_dir(out_dir: str, data: pd.DataFrame, labels: List[str]):
     :param labels:
         The label vector that will be indexed by the class number in the data.
     """
+
+    log_out.info("Writing output to directory '{}'".format(out_dir))
     for index, label in enumerate(labels):
         target_dir = os.path.abspath(os.path.join(out_dir, label))
         label_data = data[data.label == index]
         if len(label_data) > 0:
-            # print("Creating dir {}".format(target_dir))
+            log_out.debug("Creating dir {}".format(target_dir))
             os.mkdir(target_dir)
             for _, row in label_data.iterrows():
                 src_path = os.path.abspath(row['path'])
                 dst_path = os.path.join(target_dir, row['filename'])
-                # print("Copying {} to {}".format(src_path, dst_path))
+                # log_out.debug("Copying {} to {}".format(src_path, dst_path))
                 os.symlink(src_path, dst_path)

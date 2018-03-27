@@ -1,2 +1,2 @@
 from .classifier import ImageClassifier
-from .reader import read_dir_metadata
+from .io import read_dir_metadata
