@@ -101,7 +101,7 @@ def read_dir_metadata(dir_path: str, sort_vals=True):
             data.append(row)
 
     if len(data) == 0:
-        raise FileNotFoundError("No image files found in directory")
+        raise FileNotFoundError("No Reconxy image files found in directory")
 
     data = pd.DataFrame(data)
     add_event_keys(data)
