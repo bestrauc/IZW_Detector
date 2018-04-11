@@ -89,7 +89,7 @@ def _read_im_exif(file_path):
     tags = None
 
     with open(file_path, 'rb') as f:
-        tags = exifread.process_file(f)
+        tags = exifread.process_file(f, stop_tag='EXIF MakerNote')
 
     # try:
     #     if str(tags['Image Make']) != 'RECONYX':
