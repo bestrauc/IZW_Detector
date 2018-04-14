@@ -6,6 +6,7 @@ import design
 import sys
 
 from queue import Queue
+from collections import OrderedDict
 
 # classification imports
 from data_utils import *
@@ -30,46 +31,60 @@ class ReadWorker(QObject):
 
     finished = pyqtSignal()
     progress = pyqtSignal(int)
-    error = pyqtSignal(object)
+    error = pyqtSignal(tuple)
     result = pyqtSignal(object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.task_queue = Queue()
+        self.mutex = QMutex()
+        self.running_mutex = QMutexLocker(self.mutex)
+        self.running = True
 
-    def process_tasks(self):
-        while not self.task_queue.empty():
-            item = self.task_queue.get()
-            # extract directory path out of the item
-            dirpath = item.data_path
+    def process_directories(self, item):
+        # if the process is currently paused..
+        if not self.running:
+            # wait for signal by `continue_iteration` to proceed
+            self.running_mutex.relock()
+            self.running = True
+            self.running_mutex.unlock()
 
-            if dirpath == "":
-                print("Directory was removed")
-                continue
+        # extract directory path out of the item
+        dir_path = item.data_path
 
-            try:
-                data = read_dir_metadata(dirpath,
-                                         progress_callback=self.report_progress)
-                item.data = data
-                self.result.emit(item)
-            except FileNotFoundError:
-                self.error.emit(item)
-            finally:
-                self.finished.emit()
+        if dir_path == '':
+            print("Directory was removed")
+            # self.task_queue.task_done()
+            return
+
+        try:
+            data = read_dir_metadata(dir_path,
+                                     progress_callback=self.report_progress)
+            item.data = data
+            self.result.emit(item)
+        except (FileNotFoundError, InterruptedError) as err:
+            self.error.emit((item, err))
+        finally:
+            self.finished.emit()
 
     @pyqtSlot(object)
     def read_directory(self, item):
-        print("Received path {}".format(str(item.data_path)))
+        self.process_directories(item)
 
-        self.task_queue.put(item)
-        self.process_tasks()
+    def pause_iteration(self):
+        """Pause processing by locking the mutex and setting running to False"""
+        self.running_mutex.relock()
+        self.running = False
 
-    def stop_processing(self):
-        pass
+    def continue_iteration(self):
+        self.running = True
+        self.running_mutex.unlock()
 
+    # report the progress and also check if we should interrupt processing
     def report_progress(self, val):
         self.progress.emit(val)
+
+        return self.running
 
 
 class ExampleApp(QMainWindow, design.Ui_MainWindow):
@@ -79,8 +94,23 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
         super(self.__class__, self).__init__()
         self.setupUi(self)
 
+        # some more custom UI setup for the progress in the statusBar
+        self.stopButton.setFixedSize(self.stopButton.geometry().width(),
+                                     self.stopButton.geometry().height())
+        self.progressBar.setFixedSize(self.progressBar.geometry().width(),
+                                      self.progressBar.geometry().height())
+
+        self.statusWidget = QWidget()
+        self.statusLayout = QHBoxLayout(self.statusWidget)
+        self.statusLayout.addWidget(self.stopButton)
+        self.statusLayout.addWidget(self.progressBar)
+        self.statusWidget.setFixedHeight(35)
+        self.statusWidget.setMaximumWidth(200)
+        self.statusBar.addPermanentWidget(self.statusWidget)
+        self.statusWidget.hide()
+
         # internal data
-        self.image_data = {}
+        self.image_data = OrderedDict()
         self.read_thread = QThread(self)
 
         self.read_worker = ReadWorker()
@@ -105,21 +135,40 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
         # UI logic
         self.addDirButton.clicked.connect(self.add_input_dir)
         self.removeDirButton.clicked.connect(self.remove_input_dir)
+        self.stopButton.clicked.connect(self.stop_processing)
 
-        self.stopButton.hide()
-        self.progressBar.hide()
-        self.label.hide()
+    def print_info_status(self, status_msg):
+        self.statusBar.setStyleSheet("color:black")
+        self.statusBar.showMessage(status_msg)
+
+    def print_error_status(self, status_msg):
+        self.statusBar.setStyleSheet("color:red")
+        self.statusBar.showMessage(status_msg)
 
     def update_success(self, data):
         # self.image_data[data.data_path].data = data
+        self.print_info_status("Images successfully read")
         item = self.inputDirsModel.findItems(data.data_path)[0]
         item.setBackground(QColor(173, 255, 47, 50))
 
-    def update_error(self, data):
+    def update_error(self, args):
+        data, err = args
         item = self.inputDirsModel.findItems(data.data_path)[0]
-        item.setBackground(QColor(255, 0, 0, 50))
+        self.statusWidget.hide()
+
+        if isinstance(err, FileNotFoundError):
+            self.print_error_status("Could not find any Reconxy images.")
+            item.setBackground(QColor(255, 0, 0, 50))
+        elif isinstance(err, InterruptedError):
+            self.print_info_status("Image scan interrupted.")
+        else:
+            raise NotImplementedError
 
     def update_progress(self, percent):
+        self.stopButton.show()
+        self.statusWidget.show()
+        self.print_info_status("Scanning files..")
+
         self.progressBar.setValue(percent)
 
     def finish_reader(self):
@@ -133,8 +182,6 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
 
         data = DataInformation(input_dir)
         self.image_data[data.data_path] = data
-
-        # QApplication.processEvents()
 
         # if no input was selected, skip
         if data.data_path == '':
@@ -153,10 +200,6 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
 
         self.read_signal.emit(data)
 
-        self.stopButton.show()
-        self.progressBar.show()
-        self.label.show()
-
     def remove_input_dir(self):
         removed_items = []
 
@@ -170,6 +213,9 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
             self.image_data[item.text()].data_path = ''
             del self.image_data[item.text()]
             self.inputDirsModel.removeRow(item.row())
+
+    def stop_processing(self):
+        self.read_worker.pause_iteration()
 
 
 def main():
