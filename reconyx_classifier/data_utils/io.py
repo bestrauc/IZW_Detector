@@ -8,6 +8,7 @@ import pandas as pd
 from .exif_utils import make_exif_dict
 
 import logging
+
 log_in = logging.getLogger("reader")
 log_out = logging.getLogger("writer")
 
@@ -67,7 +68,7 @@ def _extend_event_keys(data: pd.DataFrame, window_secs=10):
     data["event_key"] = event_keys
 
 
-def read_dir_metadata(dir_path: str, sort_vals=True):
+def read_dir_metadata(dir_path: str, sort_vals=True, progress_callback=None):
     def add_event_keys(data):
         """Add some unique keys to the rows.
 
@@ -84,21 +85,40 @@ def read_dir_metadata(dir_path: str, sort_vals=True):
 
     log_in.info("Scanning directory '{}'".format(dir_path))
     data = []
-    for filename in os.listdir(dir_path):
-        if filename.lower().endswith((".jpg", ".jpeg")):
-            file_path = os.path.join(dir_path, filename)
-            file_name = os.path.basename(file_path)
 
-            # skip jpg file with IO issue or without right EXIF tags
-            try:
-                row = make_exif_dict(file_path, filename)
-            except (IOError, KeyError) as err:
-                log_in.warning("Skipping file '{}' - {} : {}".format(
-                    file_name, type(err).__name__, str(err)
-                ))
-                continue
+    # candidate image files, read to list so we know max files
+    jpg_files = [fname for fname in os.listdir(dir_path)
+                 if fname.lower().endswith((".jpg", ".jpeg"))]
 
-            data.append(row)
+    # report progress every 2% of files scanned
+    max_files = len(jpg_files)
+    prog_step = max_files // 50
+
+    log_in.info("Found {} .jpg files".format(max_files))
+
+    # for filename in os.listdir(dir_path):
+    #     if filename.lower().endswith((".jpg", ".jpeg")):
+    for i, filename in enumerate(jpg_files):
+        file_path = os.path.join(dir_path, filename)
+        file_name = os.path.basename(file_path)
+
+        # skip jpg file with IO issue or without right EXIF tags
+        try:
+            row = make_exif_dict(file_path, filename)
+        except (IOError, KeyError) as err:
+            log_in.warning("Skipping file '{}' - {} : {}".format(
+                file_name, type(err).__name__, str(err)
+            ))
+            continue
+
+        data.append(row)
+
+        # report progress to the caller (if desired)
+        # the caller could also signal us to abort processing
+        if progress_callback and (i % prog_step) == 0:
+            continue_signal = progress_callback(i / float(max_files) * 100)
+            if not continue_signal:
+                return None
 
     if len(data) == 0:
         raise FileNotFoundError("No Reconxy image files found in directory")
