@@ -62,10 +62,9 @@ class ReadWorker(QObject):
                                      progress_callback=self.report_progress)
             item.data = data
             self.result.emit(item)
+            self.finished.emit()
         except (FileNotFoundError, InterruptedError) as err:
             self.error.emit((item, err))
-        finally:
-            self.finished.emit()
 
     @pyqtSlot(object)
     def read_directory(self, item):
@@ -88,26 +87,35 @@ class ReadWorker(QObject):
 
 
 class ExampleApp(QMainWindow, design.Ui_MainWindow):
-    read_signal = pyqtSignal(object)
-
-    def __init__(self):
-        super(self.__class__, self).__init__()
-        self.setupUi(self)
-
+    def extendUi(self):
         # some more custom UI setup for the progress in the statusBar
         self.stopButton.setFixedSize(self.stopButton.geometry().width(),
                                      self.stopButton.geometry().height())
         self.progressBar.setFixedSize(self.progressBar.geometry().width(),
                                       self.progressBar.geometry().height())
 
+        # status change buttons are stacked on top of each other
+        self.statusChanger = QStackedWidget()
+        self.statusChanger.addWidget(self.startButton)
+        self.statusChanger.addWidget(self.stopButton)
+        self.statusChanger.setCurrentIndex(1)
+
+        # status change is next to a progress bar in the status bar
         self.statusWidget = QWidget()
         self.statusLayout = QHBoxLayout(self.statusWidget)
-        self.statusLayout.addWidget(self.stopButton)
+        self.statusLayout.addWidget(self.statusChanger)
         self.statusLayout.addWidget(self.progressBar)
         self.statusWidget.setFixedHeight(35)
         self.statusWidget.setMaximumWidth(200)
         self.statusBar.addPermanentWidget(self.statusWidget)
         self.statusWidget.hide()
+
+    read_signal = pyqtSignal(object)
+
+    def __init__(self):
+        super(self.__class__, self).__init__()
+        self.setupUi(self)
+        self.extendUi()
 
         # internal data
         self.image_data = OrderedDict()
@@ -117,7 +125,7 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
         self.read_worker.result.connect(self.update_success)
         self.read_worker.error.connect(self.update_error)
         self.read_worker.progress.connect(self.update_progress)
-        self.read_worker.finished.connect(self.finish_reader)
+        self.read_worker.finished.connect(self.finish_reader_success)
         self.read_signal.connect(self.read_worker.read_directory)
 
         self.read_worker.moveToThread(self.read_thread)
@@ -154,25 +162,27 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
     def update_error(self, args):
         data, err = args
         item = self.inputDirsModel.findItems(data.data_path)[0]
-        self.statusWidget.hide()
 
         if isinstance(err, FileNotFoundError):
+            self.statusWidget.hide()
             self.print_error_status("Could not find any Reconxy images.")
             item.setBackground(QColor(255, 0, 0, 50))
         elif isinstance(err, InterruptedError):
+            self.statusChanger.setCurrentIndex(0)
             self.print_info_status("Image scan interrupted.")
         else:
             raise NotImplementedError
 
     def update_progress(self, percent):
-        self.stopButton.show()
+        self.statusChanger.setCurrentIndex(1)
+        self.statusChanger.show()
         self.statusWidget.show()
         self.print_info_status("Scanning files..")
 
         self.progressBar.setValue(percent)
 
-    def finish_reader(self):
-        self.stopButton.hide()
+    def finish_reader_success(self):
+        self.statusChanger.hide()
         self.progressBar.setValue(100)
 
     def add_input_dir(self):
