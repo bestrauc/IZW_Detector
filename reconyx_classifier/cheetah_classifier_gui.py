@@ -5,10 +5,8 @@ from PyQt5.QtGui import *
 import design
 import sys
 
-from queue import PriorityQueue
 from collections import OrderedDict
 
-# classification imports
 from data_utils import *
 import pandas as pd
 
@@ -24,47 +22,67 @@ class ImageData:
     # TODO: make class into a model for the QListView
 
     def __init__(self):
-        self.data = OrderedDict()
+        # worker thread synchronization
+        self._data_lock = QMutex()
+        self._unpause_lock = QMutex()
+        self._unpause_signal = QWaitCondition()
 
-        self.paused = False
-        self.active_item = None
+        self._data = OrderedDict()
+        self._paused = False
+        self._active_item = None
 
     def add_dir(self, dir_path):
-        if dir_path in self.data:
-            return
+        self._data_lock.lock()
+        if dir_path not in self._data:
+            data_info = DataInformation(dir_path)
+            self._data[data_info.data_path] = data_info
 
-        data_info = DataInformation(dir_path)
-        self.data[data_info.data_path] = data_info
+        self._data_lock.unlock()
 
     def del_dir(self, dir_path):
-        if dir_path in self.data:
-            item = self.data[dir_path]
+        self._data_lock.lock()
+        if dir_path in self._data:
+            item = self._data[dir_path]
 
             # interrupt processing first if item is being processed
             if not item.process_lock.tryLock():
                 # signal end and wait for the lock
-                self.active_item = None
+                self._active_item = None
                 item.process_lock.lock()
 
             # item is not being processed, delete it
-            del self.data[dir_path]
+            del self._data[dir_path]
+
+        self._data_lock.unlock()
 
     def get_next_unread(self):
+        if self._paused:
+            self._unpause_lock.lock()
+            self._unpause_signal.wait(self._unpause_lock)
+            self._unpause_lock.unlock()
+
+        self._data_lock.lock()
         # naively iterate through the dictionary to get next task
         # (can't easily use a generator since inserts invalidate iterator)
-        for val in self.data.values():
+        for val in self._data.values():
             if val.metadata is None:
-                self.active_item = val
-                return val
+                self._active_item = val
+                break
 
-        return None
+        self._data_lock.unlock()
+
+        return self._active_item
+
+    def is_paused(self):
+        return self._active_item is None
 
     def pause_reading(self):
-        self.paused = True
-        self.active_item = None
+        self._paused = True
+        self._active_item = None
 
     def continue_reading(self):
-        self.paused = False
+        self._paused = False
+        self._unpause_signal.wakeAll()
 
 
 class DataInformation:
@@ -111,8 +129,8 @@ class ReadWorker(QObject):
         self.data = data
         self.running_mutex = QMutex()
 
-    # TODO: if a directory is added/removed multiple times, this slot
-    # TODO: queues the add-events and starts processing after stops
+    # process signals are ignored if no outstanding directories left
+    # the processing function blocks if reading is currently paused
     @pyqtSlot()
     def process_directories(self):
         # get next task, return if no tasks left
@@ -131,9 +149,8 @@ class ReadWorker(QObject):
     def report_progress(self, val):
         self.progress.emit(val)
 
-        # self.active_item should never be None at this stage
-        # (report_progress is only ever called from within process_directories)
-        return self.data.active_item is not None
+        # check if the data processing was paused
+        return not self.data.is_paused()
 
 
 class ExampleApp(QMainWindow, design.Ui_MainWindow):
