@@ -65,11 +65,13 @@ def main():
 
     if args.copy_output:
         classified_path = args.directory.rstrip('/\\') + '_classified'
-        log.info("Creating dir {}".format(classified_path))
+        log.info("Creating dir '{}'".format(classified_path))
         try:
             os.mkdir(classified_path)
-        except FileExistsError as err:
-            log.error("Directory already exists.")
+        except FileExistsError:
+            log.error("Directory '{}' already exists.".format(
+                os.path.basename(os.path.normpath(classified_path))
+            ))
             return
 
         classification_to_dir(classified_path, data, default_labels)
