@@ -138,9 +138,6 @@ class ImageDataListModel(QAbstractListModel):
     def is_paused(self):
         return self._active_item is None
 
-    def toggle_paused(self):
-        self._paused = not self._paused
-
     def pause_reading(self):
         self._paused = True
         self._active_item = None

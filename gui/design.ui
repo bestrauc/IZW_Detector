@@ -179,7 +179,7 @@
      <x>0</x>
      <y>0</y>
      <width>560</width>
-     <height>25</height>
+     <height>19</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuMenu">
@@ -188,14 +188,7 @@
     </property>
     <addaction name="actionQuit"/>
    </widget>
-   <widget class="QMenu" name="menuOptions">
-    <property name="title">
-     <string>Options</string>
-    </property>
-    <addaction name="autoScan_directories"/>
-   </widget>
    <addaction name="menuMenu"/>
-   <addaction name="menuOptions"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="autoScan_directories">

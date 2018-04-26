@@ -55,7 +55,6 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.removeDirButton.clicked.connect(self.remove_selected_dirs)
         self.startButton.clicked.connect(self.image_dir_model.continue_reading)
         self.stopButton.clicked.connect(self.image_dir_model.pause_reading)
-        self.autoScan_directories.changed.connect(self.toggle_auto_read)
 
         # configure reader and start its thread
         self.read_thread = QThread(self)
@@ -63,14 +62,6 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.image_dir_model.read_signal.connect(self.read_worker.process_directories)
         self.read_worker.moveToThread(self.read_thread)
         self.read_thread.start()
-
-    def toggle_auto_read(self):
-        self.print_info_status("Press start to scan directories.")
-        self.statusWidget.show()
-        self.statusChanger.setCurrentIndex(0)
-        self.progressBar.hide()
-
-        self.image_dir_model.toggle_paused()
 
     def add_input_dir(self):
         # let the user select the target directory
