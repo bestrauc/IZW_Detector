@@ -4,12 +4,21 @@ from collections import OrderedDict
 
 from data_utils.io import read_dir_metadata
 import pandas as pd
+from enum import Enum
+
+
+class ProcessState(Enum):
+    QUEUED = 0
+    FAILED = 1
+    IN_PROG = 2
+    DONE = 3
 
 
 class ImageDataItem:
     def __init__(self, data_path):
         self.data_path = data_path
         self.metadata = None
+        self.state = ProcessState.QUEUED
 
         self.process_lock = QMutex()
 
@@ -20,12 +29,15 @@ class ImageDataItem:
         if not self.process_lock.tryLock():
             return False
 
+        self.state = ProcessState.IN_PROG
+
         try:
             self.metadata = read_dir_metadata(
                 self.data_path,
                 progress_callback=progress_callback)
-        except FileNotFoundError as err:
-            self.metadata = pd.DataFrame()
+            self.state = ProcessState.DONE
+        except (FileNotFoundError, InterruptedError) as err:
+            self.state = ProcessState.FAILED
             raise err
         finally:
             self.process_lock.unlock()
@@ -53,11 +65,13 @@ class ImageDataListModel(QAbstractListModel):
 
         # set background of the directory depending on processing state
         # Successful read: Green. No images found: Red. Else no color.
-        if role == Qt.BackgroundColorRole and item.metadata is not None:
-            if len(item.metadata) > 0:
-                return QColor(173, 255, 47, 50)
-            else:
+        if role == Qt.BackgroundColorRole and item.state != ProcessState.QUEUED:
+            if item.state == ProcessState.DONE:
+                return QColor(173, 255, 47, 60)
+            elif item.state == ProcessState.FAILED:
                 return QColor(255, 0, 0, 50)
+            else:
+                return QColor(238, 232, 170, 80)
 
     def rowCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
         """Necessary override of rowCount. Returns number of directories."""
@@ -127,7 +141,7 @@ class ImageDataListModel(QAbstractListModel):
         # naively iterate through the dictionary to get next task
         # (can't easily use a generator since inserts invalidate iterator)
         for val in self._data.values():
-            if val.metadata is None:
+            if val.state == ProcessState.QUEUED:
                 self._active_item = val
                 break
 
