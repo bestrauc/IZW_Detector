@@ -2,11 +2,11 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
 from gui_model import ImageDataListModel
-from gui_logic import Controller, ReadWorker
+from gui_logic import ReadWorker
 import design
 
 
-class ExampleApp(QMainWindow, design.Ui_MainWindow):
+class ClassificationApp(QMainWindow, design.Ui_MainWindow):
     def extendUi(self):
         # some more custom UI setup for the progress in the statusBar
         self.stopButton.setFixedSize(self.stopButton.geometry().width(),
@@ -30,6 +30,16 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
         self.statusBar.addPermanentWidget(self.statusWidget)
         self.statusWidget.hide()
 
+    def _configure_read_worker(self):
+        # configure reader thread
+        read_worker = ReadWorker(self.image_dir_model)
+        read_worker.result.connect(self.update_success)
+        read_worker.error.connect(self.update_error)
+        read_worker.progress.connect(self.update_progress)
+        read_worker.finished.connect(self.finish_reader_success)
+
+        return read_worker
+
     def __init__(self):
         super(self.__class__, self).__init__()
         self.setupUi(self)
@@ -40,28 +50,34 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
         self.directoryList.setModel(self.image_dir_model)
         self.directoryList.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
-        # configure reader thread
-        self.read_thread = QThread(self)
-        self.read_worker = ReadWorker(self.image_dir_model)
-        self.read_worker.result.connect(self.update_success)
-        self.read_worker.error.connect(self.update_error)
-        self.read_worker.progress.connect(self.update_progress)
-        self.read_worker.finished.connect(self.finish_reader_success)
-
-        # connect this view to the controller
-        self.controller = Controller(self.image_dir_model)
-
-        self.addDirButton.clicked.connect(self.controller.add_input_dir)
-
+        # set GUI logic callbacks
+        self.addDirButton.clicked.connect(self.add_input_dir)
         self.removeDirButton.clicked.connect(self.remove_selected_dirs)
+        self.startButton.clicked.connect(self.image_dir_model.continue_reading)
+        self.stopButton.clicked.connect(self.image_dir_model.pause_reading)
+        self.autoScan_directories.changed.connect(self.toggle_auto_read)
 
-        self.startButton.clicked.connect(self.controller.start_processing)
-        self.stopButton.clicked.connect(self.controller.stop_processing)
-        self.controller.read_signal.connect(self.read_worker.process_directories)
-
-        # start reader thread
+        # configure reader and start its thread
+        self.read_thread = QThread(self)
+        self.read_worker = self._configure_read_worker()
+        self.image_dir_model.read_signal.connect(self.read_worker.process_directories)
         self.read_worker.moveToThread(self.read_thread)
         self.read_thread.start()
+
+    def toggle_auto_read(self):
+        self.print_info_status("Press start to scan directories.")
+        self.statusWidget.show()
+        self.statusChanger.setCurrentIndex(0)
+        self.progressBar.hide()
+
+        self.image_dir_model.toggle_paused()
+
+    def add_input_dir(self):
+        # let the user select the target directory
+        input_dir = QFileDialog.getExistingDirectory(
+            caption="Select input directory.")
+
+        self.image_dir_model.add_dir(input_dir)
 
     def remove_selected_dirs(self):
         selected_idx = [QPersistentModelIndex(index) for index in

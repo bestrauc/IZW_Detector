@@ -37,6 +37,8 @@ class ImageDataItem:
 
 
 class ImageDataListModel(QAbstractListModel):
+    read_signal = pyqtSignal()
+
     """Data model for the set of image directories we classify."""
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
@@ -89,6 +91,8 @@ class ImageDataListModel(QAbstractListModel):
         self.endInsertRows()
         self._data_lock.unlock()
 
+        self.read_signal.emit()
+
     def del_dir(self, row_index: QModelIndex):
         item = list(self._data.values())[row_index]
 
@@ -119,6 +123,7 @@ class ImageDataListModel(QAbstractListModel):
             self._unpause_lock.unlock()
 
         self._data_lock.lock()
+        self._active_item = None
         # naively iterate through the dictionary to get next task
         # (can't easily use a generator since inserts invalidate iterator)
         for val in self._data.values():
@@ -133,6 +138,9 @@ class ImageDataListModel(QAbstractListModel):
     def is_paused(self):
         return self._active_item is None
 
+    def toggle_paused(self):
+        self._paused = not self._paused
+
     def pause_reading(self):
         self._paused = True
         self._active_item = None
@@ -140,3 +148,4 @@ class ImageDataListModel(QAbstractListModel):
     def continue_reading(self):
         self._paused = False
         self._unpause_signal.wakeAll()
+        self.read_signal.emit()

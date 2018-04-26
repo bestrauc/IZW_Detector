@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import *
 
-from gui_view import ExampleApp
+from gui_view import ClassificationApp
 import sys
 
 
@@ -14,7 +14,7 @@ logging.basicConfig(stream=sys.stdout, level=logging.INFO,
 
 def main():
     app = QApplication(sys.argv)
-    form = ExampleApp()
+    form = ClassificationApp()
     form.show()
     sys.exit(app.exec())
 
