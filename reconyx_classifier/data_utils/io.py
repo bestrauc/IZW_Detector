@@ -195,60 +195,6 @@ def read_training_metadata(dir_path: str, class_dir_names, extend_events=True):
     return data
 
 
-# not sure if this function is needed
-# parse the already sorted training/test data
-# normally this data should exist somewhere as a metadata.hdf5 file
-def read_training_metadata_old(dir_path: str, extend_events=True):
-    """Read training/validation data from directory 'dir_path'.
-
-    The directory should contain subdirectories 'train' and 'val', which
-    respectively contain subdirectories for all of the desired classes.
-
-    e.g.:   dir ->
-                train -> (cheetah, leopard, unknown)
-                test  -> (cheetah, leopard, unknown)
-
-    :param dir_path: string
-        Path to the root directory with the training/validation data
-    :param extend_events: bool
-    """
-
-    data = None
-    datasets = ['train', 'val']
-    labels = ['cheetah', 'leopard', 'unknown']
-
-    for d_set in datasets:
-        d_set_path = dir_path + '/' + d_set
-        if not os.path.isdir(d_set_path):
-            raise IOError("Directory '{}' not found.".format(d_set_path))
-
-        for label in labels:
-            lab_set_path = d_set_path + '/' + label
-            if not os.path.isdir(lab_set_path):
-                raise IOError("Directory '{}' not found.".format(lab_set_path))
-
-            print("Reading %s" % lab_set_path)
-            set_data = read_dir_metadata(lab_set_path)
-            set_data['set'] = d_set
-            set_data['label'] = label
-
-            if data is None:
-                data = set_data
-            else:
-                data = pd.concat([data, set_data])
-
-    _check_duplicates(data)
-
-    # sort by the sortkey we constructed and break ties by filename
-    data = data.sort_values(by=["sortkey", 'filename'])
-    data["timeoffset"] = data.datetime.diff()
-
-    if extend_events:
-        _extend_event_keys(data)
-
-    return data
-
-
 def classification_to_dir(out_dir: str, data: pd.DataFrame, labels: List[str]):
     """Copy the labeled data to the output directory.
 
