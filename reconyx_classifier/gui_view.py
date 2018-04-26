@@ -6,6 +6,58 @@ from gui_logic import ReadWorker
 import design
 
 
+class StatusWidgetManager:
+    """StatusWidgetManager keeps status bar components in a consistent state."""
+
+    def __init__(self, statusChanger, progressBar):
+        self.statusChanger = statusChanger
+        self.progressBar = progressBar
+
+        self.statusWidget = QWidget()
+        self.statusLayout = QHBoxLayout(self.statusWidget)
+        self.statusLayout.addWidget(self.statusChanger)
+        self.statusLayout.addWidget(self.progressBar)
+        self.statusWidget.setFixedHeight(35)
+        self.statusWidget.setMaximumWidth(200)
+        self.statusWidget.hide()
+
+    def reset_state(self):
+        """Reset the components to a well-defined state.
+
+           The reset helps making the other state updates easier.
+        """
+        self.statusChanger.show()
+        self.progressBar.show()
+        self.progressBar.setValue(0)
+        self.progressBar.setEnabled(True)
+        self.statusWidget.show()
+
+    def set_error_state(self):
+        """Hide the widget, since it's not informative for errors."""
+        self.reset_state()
+        self.statusWidget.hide()
+
+    def set_interrupted_state(self):
+        """Disable progress and show restart button to indicate interrupt."""
+        self.reset_state()
+        self.statusChanger.setCurrentIndex(0)
+        self.progressBar.setEnabled(False)
+
+    def set_update_state(self, percent):
+        """Update progress and show stop button."""
+        self.reset_state()
+        self.statusChanger.setCurrentIndex(1)
+        self.statusChanger.show()
+        self.statusWidget.show()
+        self.progressBar.setValue(percent)
+
+    def set_success_state(self):
+        """Hide start/stop buttons and indicate complete progress."""
+        self.reset_state()
+        self.statusChanger.hide()
+        self.progressBar.setValue(100)
+
+
 class ClassificationApp(QMainWindow, design.Ui_MainWindow):
     def extendUi(self):
         # some more custom UI setup for the progress in the statusBar
@@ -20,15 +72,10 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.statusChanger.addWidget(self.stopButton)
         self.statusChanger.setCurrentIndex(1)
 
-        # status change is next to a progress bar in the status bar
-        self.statusWidget = QWidget()
-        self.statusLayout = QHBoxLayout(self.statusWidget)
-        self.statusLayout.addWidget(self.statusChanger)
-        self.statusLayout.addWidget(self.progressBar)
-        self.statusWidget.setFixedHeight(35)
-        self.statusWidget.setMaximumWidth(200)
-        self.statusBar.addPermanentWidget(self.statusWidget)
-        self.statusWidget.hide()
+        self.statusManager = StatusWidgetManager(self.statusChanger,
+                                                 self.progressBar)
+
+        self.statusBar.addPermanentWidget(self.statusManager.statusWidget)
 
     def _configure_read_worker(self):
         # configure reader thread
@@ -59,7 +106,8 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         # configure reader and start its thread
         self.read_thread = QThread(self)
         self.read_worker = self._configure_read_worker()
-        self.image_dir_model.read_signal.connect(self.read_worker.process_directories)
+        self.image_dir_model.read_signal.connect(
+            self.read_worker.process_directories)
         self.read_worker.moveToThread(self.read_thread)
         self.read_thread.start()
 
@@ -92,22 +140,17 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         data, err = args
 
         if isinstance(err, FileNotFoundError):
-            self.statusWidget.hide()
+            self.statusManager.set_error_state()
             self.print_error_status("Could not find any Reconxy images.")
         elif isinstance(err, InterruptedError):
-            self.statusChanger.setCurrentIndex(0)
+            self.statusManager.set_interrupted_state()
             self.print_info_status("Image scan interrupted.")
         else:
             raise NotImplementedError
 
     def update_progress(self, percent):
-        self.statusChanger.setCurrentIndex(1)
-        self.statusChanger.show()
-        self.statusWidget.show()
+        self.statusManager.set_update_state(percent)
         self.print_info_status("Scanning files..")
 
-        self.progressBar.setValue(percent)
-
     def finish_reader_success(self):
-        self.statusChanger.hide()
-        self.progressBar.setValue(100)
+        self.statusManager.set_success_state()
