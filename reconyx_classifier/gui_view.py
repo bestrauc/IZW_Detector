@@ -1,6 +1,5 @@
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
-from PyQt5.QtGui import *
 
 from gui_model import ImageDataListModel
 from gui_logic import Controller, ReadWorker
@@ -8,8 +7,6 @@ import design
 
 
 class ExampleApp(QMainWindow, design.Ui_MainWindow):
-    removeSelectedSignal = pyqtSignal(object)
-
     def extendUi(self):
         # some more custom UI setup for the progress in the statusBar
         self.stopButton.setFixedSize(self.stopButton.geometry().width(),
@@ -40,10 +37,8 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
 
         # connect this view to the model
         self.image_dir_model = ImageDataListModel()
-
-        # Views
-        # the directory list view is fed by the input directory model
-        # self.directoryList.setModel(self.image_data)
+        self.directoryList.setModel(self.image_dir_model)
+        self.directoryList.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
         # configure reader thread
         self.read_thread = QThread(self)
@@ -53,20 +48,12 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
         self.read_worker.progress.connect(self.update_progress)
         self.read_worker.finished.connect(self.finish_reader_success)
 
-        # Models
-        # the input directory model holds the selected input directories
-        # TODO: remove this and make the ImageData the model for the view
-        self.inputDirsModel = QStandardItemModel()
-        self.directoryList.setModel(self.inputDirsModel)
-        self.directoryList.setSelectionMode(QAbstractItemView.ExtendedSelection)
-
         # connect this view to the controller
-        self.controller = Controller((self.image_dir_model, self.inputDirsModel))
+        self.controller = Controller(self.image_dir_model)
 
         self.addDirButton.clicked.connect(self.controller.add_input_dir)
 
-        self.removeDirButton.clicked.connect(self.send_selected_dirs)
-        self.removeSelectedSignal.connect(self.controller.remove_input_dir)
+        self.removeDirButton.clicked.connect(self.remove_selected_dirs)
 
         self.startButton.clicked.connect(self.controller.start_processing)
         self.stopButton.clicked.connect(self.controller.stop_processing)
@@ -76,14 +63,12 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
         self.read_worker.moveToThread(self.read_thread)
         self.read_thread.start()
 
-    def send_selected_dirs(self):
-        selected_items = []
-        for index in self.directoryList.selectionModel().selectedIndexes():
-            item = self.inputDirsModel.itemFromIndex(index)
-            selected_items.append(item)
+    def remove_selected_dirs(self):
+        selected_idx = [QPersistentModelIndex(index) for index in
+                        self.directoryList.selectionModel().selectedIndexes()]
 
-        for item in selected_items:
-            self.removeSelectedSignal.emit(item)
+        for index in selected_idx:
+            self.image_dir_model.del_dir(index.row())
 
     def print_info_status(self, status_msg):
         self.statusBar.setStyleSheet("color:black")
@@ -94,10 +79,7 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
         self.statusBar.showMessage(status_msg)
 
     def update_success(self, data):
-        # self.image_data[data.data_path].data = data
         self.print_info_status("Images successfully read")
-        item = self.inputDirsModel.findItems(data.data_path)[0]
-        item.setBackground(QColor(173, 255, 47, 50))
 
     def update_error(self, args):
         data, err = args
@@ -105,9 +87,6 @@ class ExampleApp(QMainWindow, design.Ui_MainWindow):
         if isinstance(err, FileNotFoundError):
             self.statusWidget.hide()
             self.print_error_status("Could not find any Reconxy images.")
-
-            item = self.inputDirsModel.findItems(data.data_path)[0]
-            item.setBackground(QColor(255, 0, 0, 50))
         elif isinstance(err, InterruptedError):
             self.statusChanger.setCurrentIndex(0)
             self.print_info_status("Image scan interrupted.")

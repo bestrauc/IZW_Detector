@@ -11,35 +11,15 @@ class Controller(QObject):
 
     def __init__(self, model):
         super().__init__()
-        self.image_dir_model, self.inputDirsModel = model
+        self.image_dir_model = model
 
     def add_input_dir(self):
         # let the user select the target directory
         input_dir = QFileDialog.getExistingDirectory(
             caption="Select input directory.")
 
-        # if no input was selected, skip
-        if input_dir == '':
-            return
-
         self.image_dir_model.add_dir(input_dir)
-
-        # don't add duplicate directories
-        # (only matches by path name, does not recognize symlinks etc.)
-        if len(self.inputDirsModel.findItems(input_dir)) > 0:
-            return
-
-        # add path to file list model
-        # at this point, the path is still not processed
-        item = QStandardItem(input_dir)
-        item.setBackground(QColor(255, 250, 205, 50))
-        self.inputDirsModel.appendRow(item)
-
         self.read_signal.emit()
-
-    def remove_input_dir(self, item):
-        self.image_dir_model.del_dir(item.text())
-        self.inputDirsModel.removeRow(item.row())
 
     def stop_processing(self):
         self.image_dir_model.pause_reading()
