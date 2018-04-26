@@ -23,7 +23,7 @@
       <x>340</x>
       <y>30</y>
       <width>201</width>
-      <height>221</height>
+      <height>211</height>
      </rect>
     </property>
     <property name="title">
@@ -138,19 +138,6 @@
      <string/>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton">
-    <property name="geometry">
-     <rect>
-      <x>220</x>
-      <y>20</y>
-      <width>101</width>
-      <height>21</height>
-     </rect>
-    </property>
-    <property name="text">
-     <string>Scan directories</string>
-    </property>
-   </widget>
    <widget class="QPushButton" name="startButton">
     <property name="geometry">
      <rect>
@@ -184,7 +171,6 @@
    <zorder>removeDirButton</zorder>
    <zorder>progressBar</zorder>
    <zorder>stopButton</zorder>
-   <zorder>pushButton</zorder>
    <zorder>startButton</zorder>
   </widget>
   <widget class="QMenuBar" name="menuBar">
@@ -193,7 +179,7 @@
      <x>0</x>
      <y>0</y>
      <width>560</width>
-     <height>19</height>
+     <height>25</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuMenu">
@@ -206,13 +192,13 @@
     <property name="title">
      <string>Options</string>
     </property>
-    <addaction name="actionRead_files_automatically"/>
+    <addaction name="autoScan_directories"/>
    </widget>
    <addaction name="menuMenu"/>
    <addaction name="menuOptions"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
-  <action name="actionRead_files_automatically">
+  <action name="autoScan_directories">
    <property name="checkable">
     <bool>true</bool>
    </property>
