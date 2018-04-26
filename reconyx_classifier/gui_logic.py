@@ -1,33 +1,4 @@
 from PyQt5.QtCore import *
-from PyQt5.QtWidgets import *
-from PyQt5.QtGui import *
-
-from data_utils import *
-import pandas as pd
-
-
-class Controller(QObject):
-    read_signal = pyqtSignal()
-
-    def __init__(self, model):
-        super().__init__()
-        self.image_dir_model = model
-
-    def add_input_dir(self):
-        # let the user select the target directory
-        input_dir = QFileDialog.getExistingDirectory(
-            caption="Select input directory.")
-
-        self.image_dir_model.add_dir(input_dir)
-        self.read_signal.emit()
-
-    def stop_processing(self):
-        self.image_dir_model.pause_reading()
-
-    def start_processing(self):
-        self.image_dir_model.continue_reading()
-        # re-emit signal to start processing again
-        self.read_signal.emit()
 
 
 class ReadWorker(QObject):
