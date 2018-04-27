@@ -2,28 +2,45 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 from collections import OrderedDict
 
+from typing import Callable
 from data_utils.io import read_dir_metadata
-import pandas as pd
 from enum import Enum
 
 
 class ProcessState(Enum):
     QUEUED = 0
-    FAILED = 1
-    IN_PROG = 2
+    IN_PROG = 1
+    FAILED = 2
     DONE = 3
 
 
 class ImageDataItem:
-    def __init__(self, data_path):
+    """Manages the set of image files in a directory.
+
+    The ImageDataItem holds the path to the image directory and
+    a metadata pandas.DataFrame for all the images. Additionally,
+    it provides `read_data` and `classify_data` functions to read
+    the image metadata and classify the images in the directory.
+    """
+
+    def __init__(self, data_path: str):
         self.data_path = data_path
         self.metadata = None
         self.state = ProcessState.QUEUED
 
         self.process_lock = QMutex()
 
-    def read_data(self, progress_callback):
-        """Read the images in the directory specified by this data."""
+    def read_data(self, progress_callback: Callable[[int], bool]) -> bool:
+        """Read the images in the directory specified by this data.
+
+        :param progress_callback:
+            The read_data function can optionally report the progress
+            of reading the images from the directory to a callback.
+            Will report a value in [0,100]% and expect a boolean in
+            return which indicates whether to keep processing.
+        :return:
+            False if the object is currently not ready for processing.
+        """
 
         # only process if the main thread isn't trying to delete it
         if not self.process_lock.tryLock():
@@ -36,8 +53,11 @@ class ImageDataItem:
                 self.data_path,
                 progress_callback=progress_callback)
             self.state = ProcessState.DONE
-        except (FileNotFoundError, InterruptedError) as err:
+        except FileNotFoundError as err:
             self.state = ProcessState.FAILED
+            raise err
+        except InterruptedError as err:
+            self.state = ProcessState.QUEUED
             raise err
         finally:
             self.process_lock.unlock()
@@ -49,11 +69,13 @@ class ImageDataItem:
 
 
 class ImageDataListModel(QAbstractListModel):
+    """Implements a ListModel interface for a set of image directories."""
+
     read_signal = pyqtSignal()
 
     """Data model for the set of image directories we classify."""
 
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> QVariant:
         """Necessary override of the data query of AbstractListModel."""
 
         row = index.row()
@@ -90,7 +112,7 @@ class ImageDataListModel(QAbstractListModel):
         self._paused = False
         self._active_item = None
 
-    def add_dir(self, dir_path):
+    def add_dir(self, dir_path: str):
         # if no input selected or duplicate path, do not add
         # (only matches by path, does not recognize symlinks etc.)
         if dir_path == '' or dir_path in self._data:
@@ -126,11 +148,11 @@ class ImageDataListModel(QAbstractListModel):
         self.endRemoveRows()
         self._data_lock.unlock()
 
-    def get_dir(self, dir_path: str) -> ImageDataItem:
-        item = self._data[dir_path]
+    def get_dir(self, row_index: QModelIndex) -> ImageDataItem:
+        item = list(self._data.values())[row_index]
         return item
 
-    def get_next_unread(self):
+    def get_next_unread(self) -> ImageDataItem:
         if self._paused:
             self._unpause_lock.lock()
             self._unpause_signal.wait(self._unpause_lock)
@@ -149,7 +171,14 @@ class ImageDataListModel(QAbstractListModel):
 
         return self._active_item
 
-    def is_paused(self):
+    def all_scanned(self):
+        dir_states = [val.state.value for val in self._data.values()]
+        scanned = all([state > 1 for state in dir_states])
+        success = any([state == ProcessState.DONE for state in dir_states])
+
+        return scanned and success
+
+    def is_paused(self) -> bool:
         return self._active_item is None
 
     def pause_reading(self):

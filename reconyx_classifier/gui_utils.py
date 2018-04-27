@@ -1,4 +1,4 @@
-from PyQt5.QtCore import *
+from PyQt5.QtCore import QObject, QMutex, pyqtSignal, pyqtSlot
 
 
 class ReadWorker(QObject):

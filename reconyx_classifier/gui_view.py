@@ -1,8 +1,10 @@
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
-from gui_model import ImageDataListModel
-from gui_logic import ReadWorker
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+from gui_model import ImageDataListModel, ProcessState
+from gui_utils import ReadWorker
 import design
 
 
@@ -59,7 +61,42 @@ class StatusWidgetManager:
 
 
 class ClassificationApp(QMainWindow, design.Ui_MainWindow):
+    def initStatusWidgetElements(self):
+        self.progressBar = QtWidgets.QProgressBar(self.centralwidget)
+        self.progressBar.setGeometry(QtCore.QRect(408, 490, 150, 14))
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.progressBar.sizePolicy().hasHeightForWidth())
+        self.progressBar.setSizePolicy(sizePolicy)
+        self.progressBar.setObjectName("progressBar")
+        self.stopButton = QtWidgets.QPushButton(self.centralwidget)
+        self.stopButton.setGeometry(QtCore.QRect(390, 490, 14, 14))
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.stopButton.sizePolicy().hasHeightForWidth())
+        self.stopButton.setSizePolicy(sizePolicy)
+        self.stopButton.setStyleSheet("background-color:red")
+        self.stopButton.setText("")
+        self.stopButton.setObjectName("stopButton")
+        self.startButton = QtWidgets.QPushButton(self.centralwidget)
+        self.startButton.setGeometry(QtCore.QRect(370, 490, 14, 14))
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.startButton.sizePolicy().hasHeightForWidth())
+        self.startButton.setSizePolicy(sizePolicy)
+        self.startButton.setText("")
+        icon2 = QtGui.QIcon()
+        icon2.addPixmap(QtGui.QPixmap(":/images/continue-processing.svg"), QtGui.QIcon.Normal, QtGui.QIcon.On)
+        self.startButton.setIcon(icon2)
+        self.startButton.setFlat(True)
+        self.startButton.setObjectName("startButton")
+
     def extendUi(self):
+        self.initStatusWidgetElements()
+
         # some more custom UI setup for the progress in the statusBar
         self.stopButton.setFixedSize(self.stopButton.geometry().width(),
                                      self.stopButton.geometry().height())
@@ -92,16 +129,22 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.setupUi(self)
         self.extendUi()
 
+        self.statBox.hide()
+
         # connect this view to the model
         self.image_dir_model = ImageDataListModel()
         self.directoryList.setModel(self.image_dir_model)
-        self.directoryList.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        # self.directoryList.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
         # set GUI logic callbacks
         self.addDirButton.clicked.connect(self.add_input_dir)
         self.removeDirButton.clicked.connect(self.remove_selected_dirs)
         self.startButton.clicked.connect(self.image_dir_model.continue_reading)
         self.stopButton.clicked.connect(self.image_dir_model.pause_reading)
+        self.classifyButton.clicked.connect(self.classify_directories)
+
+        self.directoryList.selectionModel().\
+            selectionChanged.connect(self.update_selection)
 
         # configure reader and start its thread
         self.read_thread = QThread(self)
@@ -111,12 +154,41 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.read_worker.moveToThread(self.read_thread)
         self.read_thread.start()
 
+    def update_selection(self, selected: QItemSelection,
+                         deselected: QItemSelection):
+        if len(selected.indexes()) == 0:
+            self.statBox.hide()
+            return
+
+        item = self.image_dir_model.get_dir(selected.indexes()[0].row())
+
+        self.statBox.show()
+        self.outputDirEdit.setText(item.data_path + "_classified")
+        if item.state == ProcessState.QUEUED:
+            self.imageNumLabel.setText("Waiting for directory scan..")
+
+        if item.state == ProcessState.FAILED:
+            self.imageNumLabel.setText("No Reconyx images found")
+
+        if item.state == ProcessState.IN_PROG:
+            self.imageNumLabel.setText("Waiting for scan to finish..")
+
+        if item.state == ProcessState.DONE:
+            self.imageNumLabel.setText("{} images found in {} events".format(
+               len(item.metadata),
+                item.metadata['event_key_simple'].nunique()
+            ))
+
     def add_input_dir(self):
         # let the user select the target directory
         input_dir = QFileDialog.getExistingDirectory(
             caption="Select input directory.")
 
         self.image_dir_model.add_dir(input_dir)
+
+    def classify_directories(self):
+        if not self.image_dir_model.all_scanned():
+            pass
 
     def remove_selected_dirs(self):
         selected_idx = [QPersistentModelIndex(index) for index in
