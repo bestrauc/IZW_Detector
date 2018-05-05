@@ -196,7 +196,7 @@
            <item>
             <widget class="QLabel" name="imageNumLabel">
              <property name="text">
-              <string>X images found</string>
+              <string>No input directory selected</string>
              </property>
              <property name="alignment">
               <set>Qt::AlignCenter</set>
@@ -205,6 +205,9 @@
            </item>
            <item>
             <widget class="QLineEdit" name="outputDirEdit">
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
              <property name="readOnly">
               <bool>true</bool>
              </property>

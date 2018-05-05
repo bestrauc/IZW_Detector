@@ -14,7 +14,7 @@ class ProcessState(Enum):
     DONE = 3
 
 
-class ImageDataItem:
+class ImageDataItem(QObject):
     """Manages the set of image files in a directory.
 
     The ImageDataItem holds the path to the image directory and
@@ -23,7 +23,11 @@ class ImageDataItem:
     the image metadata and classify the images in the directory.
     """
 
+    change_signal = pyqtSignal()
+
     def __init__(self, data_path: str):
+        super().__init__()
+
         self.data_path = data_path
         self.metadata = None
         self.state = ProcessState.QUEUED
@@ -47,6 +51,7 @@ class ImageDataItem:
             return False
 
         self.state = ProcessState.IN_PROG
+        self.change_signal.emit()
 
         try:
             self.metadata = read_dir_metadata(
@@ -60,6 +65,7 @@ class ImageDataItem:
             self.state = ProcessState.QUEUED
             raise err
         finally:
+            self.change_signal.emit()
             self.process_lock.unlock()
 
         return True
@@ -68,15 +74,19 @@ class ImageDataItem:
         pass
 
 
-class ImageDataListModel(QAbstractListModel):
+class ImageDataListModel(QAbstractTableModel):
     """Implements a ListModel interface for a set of image directories."""
 
     read_signal = pyqtSignal()
 
-    """Data model for the set of image directories we classify."""
+    @pyqtSlot()
+    def _changed_dir_item(self):
+        ind1 = self.createIndex(0, 0)
+        ind2 = self.createIndex(self.rowCount()-1, self.columnCount()-1)
+        self.dataChanged.emit(ind1, ind2)
 
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> QVariant:
-        """Necessary override of the data query of AbstractListModel."""
+    def path_data(self, index: QModelIndex,
+                  role: int = Qt.DisplayRole) -> QVariant:
 
         row = index.row()
         item = list(self._data.values())[row]
@@ -95,9 +105,45 @@ class ImageDataListModel(QAbstractListModel):
             else:
                 return QColor(238, 232, 170, 80)
 
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> QVariant:
+        """Necessary override of the data query of AbstractListModel."""
+
+        col = index.column()
+        row = index.row()
+        item = list(self._data.values())[row]
+
+        # column 0 stores directory paths and their formatting, etc.
+        if col == 0:
+            return self.path_data(index, role)
+
+        # column 1 stores the output paths
+        if col == 1:
+            if role == Qt.EditRole:
+                return item.data_path + "_classified"
+
+        # column 2 stores the processing state
+        if col == 2:
+            if role == Qt.EditRole:
+                if item.state == ProcessState.QUEUED:
+                    return "Waiting for directory scan.."
+                if item.state == ProcessState.FAILED:
+                    return "No Reconyx images found"
+                if item.state == ProcessState.IN_PROG:
+                    return "Waiting for scan to finish.."
+                if item.state == ProcessState.DONE:
+                    return "{} images found in {} events".format(
+                       len(item.metadata),
+                       item.metadata['event_key_simple'].nunique()
+                    )
+
+                # TODO: log state error if we reach this
+
     def rowCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
         """Necessary override of rowCount. Returns number of directories."""
         return len(self._data)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
+        return 3
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -122,6 +168,7 @@ class ImageDataListModel(QAbstractListModel):
         self.beginInsertRows(QModelIndex(), self.rowCount(), self.rowCount())
         if dir_path not in self._data:
             data_info = ImageDataItem(dir_path)
+            data_info.change_signal.connect(self._changed_dir_item)
             self._data[data_info.data_path] = data_info
 
         self.endInsertRows()

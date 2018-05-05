@@ -64,32 +64,39 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
     def initStatusWidgetElements(self):
         self.progressBar = QtWidgets.QProgressBar(self.centralwidget)
         self.progressBar.setGeometry(QtCore.QRect(408, 490, 150, 14))
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed,
+                                           QtWidgets.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.progressBar.sizePolicy().hasHeightForWidth())
+        sizePolicy.setHeightForWidth(
+            self.progressBar.sizePolicy().hasHeightForWidth())
         self.progressBar.setSizePolicy(sizePolicy)
         self.progressBar.setObjectName("progressBar")
         self.stopButton = QtWidgets.QPushButton(self.centralwidget)
         self.stopButton.setGeometry(QtCore.QRect(390, 490, 14, 14))
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed,
+                                           QtWidgets.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.stopButton.sizePolicy().hasHeightForWidth())
+        sizePolicy.setHeightForWidth(
+            self.stopButton.sizePolicy().hasHeightForWidth())
         self.stopButton.setSizePolicy(sizePolicy)
         self.stopButton.setStyleSheet("background-color:red")
         self.stopButton.setText("")
         self.stopButton.setObjectName("stopButton")
         self.startButton = QtWidgets.QPushButton(self.centralwidget)
         self.startButton.setGeometry(QtCore.QRect(370, 490, 14, 14))
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Fixed,
+                                           QtWidgets.QSizePolicy.Fixed)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.startButton.sizePolicy().hasHeightForWidth())
+        sizePolicy.setHeightForWidth(
+            self.startButton.sizePolicy().hasHeightForWidth())
         self.startButton.setSizePolicy(sizePolicy)
         self.startButton.setText("")
         icon2 = QtGui.QIcon()
-        icon2.addPixmap(QtGui.QPixmap(":/images/continue-processing.svg"), QtGui.QIcon.Normal, QtGui.QIcon.On)
+        icon2.addPixmap(QtGui.QPixmap(":/images/continue-processing.svg"),
+                        QtGui.QIcon.Normal, QtGui.QIcon.On)
         self.startButton.setIcon(icon2)
         self.startButton.setFlat(True)
         self.startButton.setObjectName("startButton")
@@ -129,7 +136,7 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.setupUi(self)
         self.extendUi()
 
-        self.statBox.hide()
+        # self.statBox.hide()
 
         # connect this view to the model
         self.image_dir_model = ImageDataListModel()
@@ -143,8 +150,14 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.stopButton.clicked.connect(self.image_dir_model.pause_reading)
         self.classifyButton.clicked.connect(self.classify_directories)
 
-        self.directoryList.selectionModel().\
-            selectionChanged.connect(self.update_selection)
+        self.dir_info_mapper = QDataWidgetMapper()
+        self.dir_info_mapper.setModel(self.image_dir_model)
+        self.dir_info_mapper.addMapping(self.imageNumLabel, 2, b"text")
+        self.dir_info_mapper.addMapping(self.outputDirEdit, 1)
+        self.directoryList.selectionModel().selectionChanged.connect(
+            self.set_info)
+        self.directoryList.selectionModel().currentRowChanged.connect(
+            self.dir_info_mapper.setCurrentModelIndex)
 
         # configure reader and start its thread
         self.read_thread = QThread(self)
@@ -154,30 +167,13 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.read_worker.moveToThread(self.read_thread)
         self.read_thread.start()
 
-    def update_selection(self, selected: QItemSelection,
-                         deselected: QItemSelection):
-        if len(selected.indexes()) == 0:
-            self.statBox.hide()
-            return
-
-        item = self.image_dir_model.get_dir(selected.indexes()[0].row())
-
-        self.statBox.show()
-        self.outputDirEdit.setText(item.data_path + "_classified")
-        if item.state == ProcessState.QUEUED:
-            self.imageNumLabel.setText("Waiting for directory scan..")
-
-        if item.state == ProcessState.FAILED:
-            self.imageNumLabel.setText("No Reconyx images found")
-
-        if item.state == ProcessState.IN_PROG:
-            self.imageNumLabel.setText("Waiting for scan to finish..")
-
-        if item.state == ProcessState.DONE:
-            self.imageNumLabel.setText("{} images found in {} events".format(
-               len(item.metadata),
-                item.metadata['event_key_simple'].nunique()
-            ))
+    def set_info(self, selection: QItemSelection):
+        if len(selection.indexes()) == 0:
+            self.imageNumLabel.setText("No input directory selected")
+            self.outputDirEdit.setText("")
+            self.outputDirEdit.setEnabled(False)
+        else:
+            self.outputDirEdit.setEnabled(True)
 
     def add_input_dir(self):
         # let the user select the target directory
