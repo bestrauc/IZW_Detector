@@ -118,6 +118,12 @@
           <height>100</height>
          </size>
         </property>
+        <property name="horizontalScrollBarPolicy">
+         <enum>Qt::ScrollBarAlwaysOff</enum>
+        </property>
+        <property name="textElideMode">
+         <enum>Qt::ElideMiddle</enum>
+        </property>
        </widget>
       </item>
       <item>
