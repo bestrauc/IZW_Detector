@@ -92,7 +92,7 @@ def read_dir_metadata(dir_path: str, sort_vals=True, progress_callback=None):
 
     # report progress every 2% of files scanned
     max_files = len(jpg_files)
-    prog_step = max_files // 50
+    prog_step = (max_files // 50) + 1
 
     log_in.info("Found {} .jpg files".format(max_files))
 
