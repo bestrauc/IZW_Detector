@@ -8,6 +8,12 @@ from gui_utils import ReadWorker
 import design
 
 
+class ImageDataItemDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        option.decorationPosition = QStyleOptionViewItem.Right
+        super(ImageDataItemDelegate, self).paint(painter, option, index)
+
+
 class StatusWidgetManager:
     """StatusWidgetManager keeps status bar components in a consistent state."""
 
@@ -136,8 +142,6 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.setupUi(self)
         self.extendUi()
 
-        # self.statBox.hide()
-
         # connect this view to the model
         self.image_dir_model = ImageDataListModel()
         self.directoryList.setModel(self.image_dir_model)
@@ -159,6 +163,9 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.directoryList.selectionModel().currentRowChanged.connect(
             self.dir_info_mapper.setCurrentModelIndex)
 
+        self.itemDelegate = ImageDataItemDelegate()
+        self.directoryList.setItemDelegate(self.itemDelegate)
+
         # configure reader and start its thread
         self.read_thread = QThread(self)
         self.read_worker = self._configure_read_worker()
@@ -169,6 +176,7 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
     def set_info(self, selection: QItemSelection):
         if len(selection.indexes()) == 0:
+            # self.statusManager.set_error_state()
             self.imageNumLabel.setText("No input directory selected")
             self.outputDirEdit.setText("")
             self.outputDirEdit.setEnabled(False)

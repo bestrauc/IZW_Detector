@@ -86,7 +86,7 @@ class ImageDataListModel(QAbstractTableModel):
         self.dataChanged.emit(ind1, ind2)
 
     def path_data(self, index: QModelIndex,
-                  role: int = Qt.DisplayRole) -> QVariant:
+                  role: int = Qt.DisplayRole):
 
         row = index.row()
         item = list(self._data.values())[row]
@@ -105,7 +105,20 @@ class ImageDataListModel(QAbstractTableModel):
             else:
                 return QColor(238, 232, 170, 80)
 
-    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> QVariant:
+        if role == Qt.UserRole:
+            return item.state
+
+        if role == Qt.DecorationRole:
+            if item.state == ProcessState.IN_PROG:
+                return self.prog_icon
+
+            return self.none_icon
+
+        if role == Qt.SizeHintRole:
+            # we just want to set the height, view will change width 25
+            return QSize(25, 25)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
         """Necessary override of the data query of AbstractListModel."""
 
         col = index.column()
@@ -157,6 +170,12 @@ class ImageDataListModel(QAbstractTableModel):
         self._data = OrderedDict()
         self._paused = False
         self._active_item = None
+
+        # prepare processing state icons
+        pixmap = QPixmap(20, 20)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        self.none_icon = QIcon(pixmap)
+        self.prog_icon = QIcon(QPixmap(":/images/hourglass.svg").scaled(20, 20))
 
     def add_dir(self, dir_path: str):
         # if no input selected or duplicate path, do not add

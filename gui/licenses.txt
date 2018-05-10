@@ -1,5 +1,8 @@
 Folder add (remove created from that):
-https://www.flaticon.com/free-icon/add-folder-interface-outlined-button_54627#term=add%20folder&page=1&position=28
+	- https://www.flaticon.com/free-icon/add-folder-interface-outlined-button_54627#term=add%20folder&page=1&position=28
+
+Hourglass
+	- https://www.flaticon.com/free-icon/hourglass_694111#term=hourglass&page=2&position=74
 
 Continue:
-Self-made placeholder
+	- Self-made placeholder
