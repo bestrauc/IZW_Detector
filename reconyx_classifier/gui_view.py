@@ -125,6 +125,7 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.statusManager = StatusWidgetManager(self.statusChanger,
                                                  self.progressBar)
 
+        # add widget with buttons and progress bar to the status bar
         self.statusBar.addPermanentWidget(self.statusManager.statusWidget)
 
     def _configure_read_worker(self):
@@ -145,7 +146,10 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         # connect this view to the model
         self.image_dir_model = ImageDataListModel()
         self.directoryList.setModel(self.image_dir_model)
-        # self.directoryList.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
+        # hide all columns except the first one
+        for i in range(1, self.image_dir_model.columnCount()):
+            self.directoryList.hideColumn(i)
 
         # set GUI logic callbacks
         self.addDirButton.clicked.connect(self.add_input_dir)
@@ -154,15 +158,20 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.stopButton.clicked.connect(self.image_dir_model.pause_reading)
         self.classifyButton.clicked.connect(self.classify_directories)
 
+        # set up a mapper that displays more detailed information
+        # about model data, such as image metadata and output path
         self.dir_info_mapper = QDataWidgetMapper()
         self.dir_info_mapper.setModel(self.image_dir_model)
         self.dir_info_mapper.addMapping(self.imageNumLabel, 2, b"text")
         self.dir_info_mapper.addMapping(self.outputDirEdit, 1)
+
+        # set up the selection behavior for clicking items
         self.directoryList.selectionModel().selectionChanged.connect(
             self.set_info)
         self.directoryList.selectionModel().currentRowChanged.connect(
             self.dir_info_mapper.setCurrentModelIndex)
 
+        # configure a delegate that lets us show progress icons on the right
         self.itemDelegate = ImageDataItemDelegate()
         self.directoryList.setItemDelegate(self.itemDelegate)
 
@@ -196,9 +205,11 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
     def remove_selected_dirs(self):
         selected_idx = [QPersistentModelIndex(index) for index in
-                        self.directoryList.selectionModel().selectedIndexes()]
+                        self.directoryList.selectionModel().selectedIndexes()
+                        if index.column() == 0]
 
-        for index in selected_idx:
+        for i, index in enumerate(selected_idx):
+            # print(i, index.row(), index.column())
             self.image_dir_model.del_dir(index.row())
 
     def print_info_status(self, status_msg):

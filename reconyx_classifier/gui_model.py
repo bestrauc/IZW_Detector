@@ -6,6 +6,7 @@ from typing import Callable
 from data_utils.io import read_dir_metadata
 from enum import Enum
 
+import os
 
 class ProcessState(Enum):
     QUEUED = 0
@@ -25,10 +26,11 @@ class ImageDataItem(QObject):
 
     change_signal = pyqtSignal()
 
-    def __init__(self, data_path: str):
+    def __init__(self, data_path: str, parent_path: str = None):
         super().__init__()
 
         self.data_path = data_path
+        self.parent_path = parent_path
         self.metadata = None
         self.state = ProcessState.QUEUED
 
@@ -89,7 +91,7 @@ class ImageDataListModel(QAbstractTableModel):
                   role: int = Qt.DisplayRole):
 
         row = index.row()
-        item = list(self._data.values())[row]
+        item = [v for x in self._data.values() for v in x.values()][row]
 
         # display the directory path in the ListView
         if role == Qt.DisplayRole:
@@ -123,7 +125,7 @@ class ImageDataListModel(QAbstractTableModel):
 
         col = index.column()
         row = index.row()
-        item = list(self._data.values())[row]
+        item = [v for x in self._data.values() for v in x.values()][row]
 
         # column 0 stores directory paths and their formatting, etc.
         if col == 0:
@@ -149,11 +151,11 @@ class ImageDataListModel(QAbstractTableModel):
                        item.metadata['event_key_simple'].nunique()
                     )
 
-                # TODO: log state error if we reach this
+                raise RuntimeError("Undefined state")
 
     def rowCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
         """Necessary override of rowCount. Returns number of directories."""
-        return len(self._data)
+        return sum(len(parent_dir) for parent_dir in self._data.values())
 
     def columnCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
         return 3
@@ -185,18 +187,29 @@ class ImageDataListModel(QAbstractTableModel):
 
         self._data_lock.lock()
         self.beginInsertRows(QModelIndex(), self.rowCount(), self.rowCount())
-        if dir_path not in self._data:
-            data_info = ImageDataItem(dir_path)
+
+        # if the directory has subdirectories, add them instead
+        # else we just add the selected directory on its own
+        subdirs = [os.path.join(dir_path, dirname)
+                   for dirname in os.listdir(dir_path)
+                   if os.path.isdir(os.path.join(dir_path, dirname))]
+
+        print(list(os.listdir(dir_path)))
+        print(subdirs)
+
+        self._data[dir_path] = OrderedDict()
+        # iterate over subdirs or dir_path if subdirs is empty
+        for iter_path in (subdirs or [dir_path]):
+            data_info = ImageDataItem(iter_path, dir_path)
             data_info.change_signal.connect(self._changed_dir_item)
-            self._data[data_info.data_path] = data_info
+            self._data[data_info.parent_path][data_info.data_path] = data_info
+            self.read_signal.emit()
 
         self.endInsertRows()
         self._data_lock.unlock()
 
-        self.read_signal.emit()
-
     def del_dir(self, row_index: QModelIndex):
-        item = list(self._data.values())[row_index]
+        item = [v for x in self._data.values() for v in x.values()][row_index]
 
         self._data_lock.lock()
         self.beginRemoveRows(QModelIndex(), row_index, row_index)
@@ -208,14 +221,17 @@ class ImageDataListModel(QAbstractTableModel):
             item.process_lock.lock()
 
         # item is not being processed, delete it
-        del self._data[item.data_path]
+        del self._data[item.parent_path][item.data_path]
+        # delete the parent entry if the whole dictionary is empty
+        if not self._data[item.parent_path]:
+            del self._data[item.parent_path]
         item.process_lock.unlock()
 
         self.endRemoveRows()
         self._data_lock.unlock()
 
     def get_dir(self, row_index: QModelIndex) -> ImageDataItem:
-        item = list(self._data.values())[row_index]
+        item = [v for x in self._data.values() for v in x.values()][row_index]
         return item
 
     def get_next_unread(self) -> ImageDataItem:
@@ -228,10 +244,11 @@ class ImageDataListModel(QAbstractTableModel):
         self._active_item = None
         # naively iterate through the dictionary to get next task
         # (can't easily use a generator since inserts invalidate iterator)
-        for val in self._data.values():
-            if val.state == ProcessState.QUEUED:
-                self._active_item = val
-                break
+        for parent_dir in self._data.values():
+            for val in parent_dir.values():
+                if val.state == ProcessState.QUEUED:
+                    self._active_item = val
+                    break
 
         self._data_lock.unlock()
 

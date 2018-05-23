@@ -105,7 +105,7 @@
        </layout>
       </item>
       <item>
-       <widget class="QListView" name="directoryList">
+       <widget class="QTreeView" name="directoryList">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Expanding" vsizetype="MinimumExpanding">
           <horstretch>0</horstretch>
@@ -124,6 +124,9 @@
         <property name="textElideMode">
          <enum>Qt::ElideMiddle</enum>
         </property>
+        <attribute name="headerVisible">
+         <bool>false</bool>
+        </attribute>
        </widget>
       </item>
       <item>
