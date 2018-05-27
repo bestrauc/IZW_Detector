@@ -1,12 +1,12 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
-from collections import OrderedDict
 
 from typing import Callable
 from data_utils.io import read_dir_metadata
 from enum import Enum
 
 import os
+
 
 class ProcessState(Enum):
     QUEUED = 0
@@ -76,7 +76,7 @@ class ImageDataItem(QObject):
         pass
 
 
-class ImageDataListModel(QAbstractTableModel):
+class ImageDataListModel(QAbstractItemModel):
     """Implements a ListModel interface for a set of image directories."""
 
     read_signal = pyqtSignal()
@@ -87,11 +87,16 @@ class ImageDataListModel(QAbstractTableModel):
         ind2 = self.createIndex(self.rowCount()-1, self.columnCount()-1)
         self.dataChanged.emit(ind1, ind2)
 
+    def _item_from_index(self, index: QModelIndex):
+        row, col = index.row(), index.column()
+        item = [v for x in self._data.values() for v in x.values()][row]
+
+        return item
+
     def path_data(self, index: QModelIndex,
                   role: int = Qt.DisplayRole):
 
-        row = index.row()
-        item = [v for x in self._data.values() for v in x.values()][row]
+        item = self._item_from_index(index)
 
         # display the directory path in the ListView
         if role == Qt.DisplayRole:
@@ -124,8 +129,7 @@ class ImageDataListModel(QAbstractTableModel):
         """Necessary override of the data query of AbstractListModel."""
 
         col = index.column()
-        row = index.row()
-        item = [v for x in self._data.values() for v in x.values()][row]
+        item = self._item_from_index(index)
 
         # column 0 stores directory paths and their formatting, etc.
         if col == 0:
@@ -155,10 +159,32 @@ class ImageDataListModel(QAbstractTableModel):
 
     def rowCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
         """Necessary override of rowCount. Returns number of directories."""
-        return sum(len(parent_dir) for parent_dir in self._data.values())
+        if parent.isValid():
+            subdirs = parent.internalPointer()
+            return len(subdirs)
+
+        # return the number of top level directories
+        return len(self._data)
 
     def columnCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
         return 3
+
+    def parent(self, child: QModelIndex):
+        if not child.isValid():
+            return QModelIndex()
+
+        subdirs = child.internalPointer()
+        if self._data is None:
+            return QModelIndex()
+        else:
+            return self.createIndex(subdirs.parent.row, 0, subdirs.parent)
+
+    def index(self, row: int, column: int, parent: QModelIndex = ...):
+        if not parent.isValid():
+            return self.createIndex(row, column, self._data.keys()[row])
+
+        parent_dir = parent.internalPointer()
+        return self.createIndex(row, column, self._data[parent_dir].keys()[row])
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -208,8 +234,9 @@ class ImageDataListModel(QAbstractTableModel):
         self.endInsertRows()
         self._data_lock.unlock()
 
-    def del_dir(self, row_index: QModelIndex):
-        item = [v for x in self._data.values() for v in x.values()][row_index]
+    def del_dir(self, index: QModelIndex):
+        row_index = index.row()
+        item = self._item_from_index(index)
 
         self._data_lock.lock()
         self.beginRemoveRows(QModelIndex(), row_index, row_index)
@@ -230,8 +257,8 @@ class ImageDataListModel(QAbstractTableModel):
         self.endRemoveRows()
         self._data_lock.unlock()
 
-    def get_dir(self, row_index: QModelIndex) -> ImageDataItem:
-        item = [v for x in self._data.values() for v in x.values()][row_index]
+    def get_dir(self, index: QModelIndex) -> ImageDataItem:
+        item = self._item_from_index(index)
         return item
 
     def get_next_unread(self) -> ImageDataItem:
