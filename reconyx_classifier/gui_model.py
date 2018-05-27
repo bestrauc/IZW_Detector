@@ -1,6 +1,8 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
+from collections import OrderedDict
+
 from typing import Callable
 from data_utils.io import read_dir_metadata
 from enum import Enum
@@ -13,6 +15,14 @@ class ProcessState(Enum):
     IN_PROG = 1
     FAILED = 2
     DONE = 3
+
+
+class ImageDirRoot:
+    def __init__(self, path=None):
+        self.path = path
+        self.child_list = []
+
+
 
 
 class ImageDataItem(QObject):
@@ -89,7 +99,7 @@ class ImageDataListModel(QAbstractItemModel):
 
     def _item_from_index(self, index: QModelIndex):
         row, col = index.row(), index.column()
-        item = [v for x in self._data.values() for v in x.values()][row]
+        item = [v for x in self._data.values() for v in x][row]
 
         return item
 
@@ -128,8 +138,18 @@ class ImageDataListModel(QAbstractItemModel):
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
         """Necessary override of the data query of AbstractListModel."""
 
+        # if the index is a top level directory (with children),
+        # only return the path of the directory
+        if index.internalPointer() is None:
+            dir_name, subdir_items = list(self._data.items())[index.row()]
+            if len(subdir_items) > 1:
+                return dir_name
+            else:
+                item = subdir_items[0]
+        else:
+            item = self._item_from_index(index)
+
         col = index.column()
-        item = self._item_from_index(index)
 
         # column 0 stores directory paths and their formatting, etc.
         if col == 0:
@@ -159,9 +179,9 @@ class ImageDataListModel(QAbstractItemModel):
 
     def rowCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
         """Necessary override of rowCount. Returns number of directories."""
-        if parent.isValid():
-            subdirs = parent.internalPointer()
-            return len(subdirs)
+        if parent.isValid() and parent.internalPointer() is not None:
+            parent_row = parent.internalPointer()
+            return len(list(self._data.values())[parent_row])
 
         # return the number of top level directories
         return len(self._data)
@@ -173,18 +193,18 @@ class ImageDataListModel(QAbstractItemModel):
         if not child.isValid():
             return QModelIndex()
 
-        subdirs = child.internalPointer()
-        if self._data is None:
+        parent_row = child.internalPointer()
+        if parent_row is None:
             return QModelIndex()
         else:
-            return self.createIndex(subdirs.parent.row, 0, subdirs.parent)
+            return self.createIndex(parent_row, 0, None)
 
     def index(self, row: int, column: int, parent: QModelIndex = ...):
         if not parent.isValid():
-            return self.createIndex(row, column, self._data.keys()[row])
+            return self.createIndex(row, column, None)
 
-        parent_dir = parent.internalPointer()
-        return self.createIndex(row, column, self._data[parent_dir].keys()[row])
+        # parent_dir = parent.internalPointer()
+        return self.createIndex(row, column, parent.row())
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -223,12 +243,13 @@ class ImageDataListModel(QAbstractItemModel):
         print(list(os.listdir(dir_path)))
         print(subdirs)
 
-        self._data[dir_path] = OrderedDict()
+        self._data[dir_path] = []
         # iterate over subdirs or dir_path if subdirs is empty
         for iter_path in (subdirs or [dir_path]):
             data_info = ImageDataItem(iter_path, dir_path)
             data_info.change_signal.connect(self._changed_dir_item)
-            self._data[data_info.parent_path][data_info.data_path] = data_info
+            # self._data[data_info.parent_path][data_info.data_path] = data_info
+            self._data[data_info.parent_path].append(data_info)
             self.read_signal.emit()
 
         self.endInsertRows()
@@ -248,7 +269,7 @@ class ImageDataListModel(QAbstractItemModel):
             item.process_lock.lock()
 
         # item is not being processed, delete it
-        del self._data[item.parent_path][item.data_path]
+        del self._data[item.parent_path][row_index]
         # delete the parent entry if the whole dictionary is empty
         if not self._data[item.parent_path]:
             del self._data[item.parent_path]
@@ -272,7 +293,7 @@ class ImageDataListModel(QAbstractItemModel):
         # naively iterate through the dictionary to get next task
         # (can't easily use a generator since inserts invalidate iterator)
         for parent_dir in self._data.values():
-            for val in parent_dir.values():
+            for val in parent_dir:
                 if val.state == ProcessState.QUEUED:
                     self._active_item = val
                     break
