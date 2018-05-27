@@ -17,12 +17,19 @@ class ProcessState(Enum):
     DONE = 3
 
 
-class ImageDirRoot:
-    def __init__(self, path=None):
-        self.path = path
+class TreeNode:
+    def __init__(self, data, parent=None):
+        self.parent = parent
         self.child_list = []
 
+        self.data = data
 
+    def add_child(self, data):
+        child_node = TreeNode(data, parent=self)
+        self.child_list.append(child_node)
+
+    def __eq__(self, other):
+        return self.data == other.data
 
 
 class ImageDataItem(QObject):
@@ -36,15 +43,17 @@ class ImageDataItem(QObject):
 
     change_signal = pyqtSignal()
 
-    def __init__(self, data_path: str, parent_path: str = None):
+    def __init__(self, data_path: str):
         super().__init__()
 
         self.data_path = data_path
-        self.parent_path = parent_path
         self.metadata = None
         self.state = ProcessState.QUEUED
 
         self.process_lock = QMutex()
+
+    def __eq__(self, other):
+        return self.data_path == other.data_path
 
     def read_data(self, progress_callback: Callable[[int], bool]) -> bool:
         """Read the images in the directory specified by this data.
@@ -106,7 +115,7 @@ class ImageDataListModel(QAbstractItemModel):
     def path_data(self, index: QModelIndex,
                   role: int = Qt.DisplayRole):
 
-        item = self._item_from_index(index)
+        item = index.internalPointer().data
 
         # display the directory path in the ListView
         if role == Qt.DisplayRole:
@@ -140,16 +149,13 @@ class ImageDataListModel(QAbstractItemModel):
 
         # if the index is a top level directory (with children),
         # only return the path of the directory
-        if index.internalPointer() is None:
-            dir_name, subdir_items = list(self._data.items())[index.row()]
-            if len(subdir_items) > 1:
-                return dir_name
-            else:
-                item = subdir_items[0]
-        else:
-            item = self._item_from_index(index)
-
+        node = index.internalPointer()
+        item = node.data
         col = index.column()
+
+        # if it's just a root item, show its path
+        # if len(node.child_list) > 0:
+        #     return self.
 
         # column 0 stores directory paths and their formatting, etc.
         if col == 0:
@@ -179,12 +185,17 @@ class ImageDataListModel(QAbstractItemModel):
 
     def rowCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
         """Necessary override of rowCount. Returns number of directories."""
-        if parent.isValid() and parent.internalPointer() is not None:
-            parent_row = parent.internalPointer()
-            return len(list(self._data.values())[parent_row])
-
         # return the number of top level directories
-        return len(self._data)
+        if not parent.isValid():
+            return len(self._data)
+
+        parent_obj = parent.internalPointer()
+
+        # return the number of children of the root level dir
+        if len(parent_obj.child_list) > 0:
+            return len(parent_obj.child_list)
+
+        return 0
 
     def columnCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
         return 3
@@ -193,18 +204,22 @@ class ImageDataListModel(QAbstractItemModel):
         if not child.isValid():
             return QModelIndex()
 
-        parent_row = child.internalPointer()
-        if parent_row is None:
+        child_obj = child.internalPointer()
+        if child_obj is None or child_obj.parent is None:
             return QModelIndex()
         else:
-            return self.createIndex(parent_row, 0, None)
+            # TODO: setting row to 0 is probably not correct
+            return self.createIndex(0, 0, child_obj.parent)
 
     def index(self, row: int, column: int, parent: QModelIndex = ...):
         if not parent.isValid():
-            return self.createIndex(row, column, None)
+            if row < 0 or row >= len(self._data):
+                return QModelIndex()
 
-        # parent_dir = parent.internalPointer()
-        return self.createIndex(row, column, parent.row())
+            return self.createIndex(row, column, self._data[row])
+
+        parent = parent.internalPointer()
+        return self.createIndex(row, column, parent.child_list[row])
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -214,8 +229,7 @@ class ImageDataListModel(QAbstractItemModel):
         self._unpause_lock = QMutex()
         self._unpause_signal = QWaitCondition()
 
-        # self._data = image_data
-        self._data = OrderedDict()
+        self._data = []
         self._paused = False
         self._active_item = None
 
@@ -226,9 +240,12 @@ class ImageDataListModel(QAbstractItemModel):
         self.prog_icon = QIcon(QPixmap(":/images/hourglass.svg").scaled(20, 20))
 
     def add_dir(self, dir_path: str):
+        dir_data = ImageDataItem(dir_path)
+        dir_root = TreeNode(dir_data)
+
         # if no input selected or duplicate path, do not add
         # (only matches by path, does not recognize symlinks etc.)
-        if dir_path == '' or dir_path in self._data:
+        if dir_path == '' or dir_root in self._data:
             return
 
         self._data_lock.lock()
@@ -240,24 +257,27 @@ class ImageDataListModel(QAbstractItemModel):
                    for dirname in os.listdir(dir_path)
                    if os.path.isdir(os.path.join(dir_path, dirname))]
 
-        print(list(os.listdir(dir_path)))
-        print(subdirs)
-
-        self._data[dir_path] = []
-        # iterate over subdirs or dir_path if subdirs is empty
-        for iter_path in (subdirs or [dir_path]):
-            data_info = ImageDataItem(iter_path, dir_path)
-            data_info.change_signal.connect(self._changed_dir_item)
-            # self._data[data_info.parent_path][data_info.data_path] = data_info
-            self._data[data_info.parent_path].append(data_info)
+        for iter_path in subdirs:
+            child_data = ImageDataItem(iter_path)
+            child_data.change_signal.connect(self._changed_dir_item)
+            dir_root.add_child(child_data)
             self.read_signal.emit()
+
+        # if no subdirectories found, emit a read signal to try to scan the root instead
+        if len(subdirs) == 0:
+            self.read_signal.emit()
+
+        self._data.append(dir_root)
 
         self.endInsertRows()
         self._data_lock.unlock()
 
     def del_dir(self, index: QModelIndex):
         row_index = index.row()
-        item = self._item_from_index(index)
+        item = index.internalPointer()
+
+        parent_item = index.parent()
+        parent_row = parent_item.row()
 
         self._data_lock.lock()
         self.beginRemoveRows(QModelIndex(), row_index, row_index)
@@ -268,19 +288,16 @@ class ImageDataListModel(QAbstractItemModel):
             self._active_item = None
             item.process_lock.lock()
 
-        # item is not being processed, delete it
-        del self._data[item.parent_path][row_index]
-        # delete the parent entry if the whole dictionary is empty
-        if not self._data[item.parent_path]:
-            del self._data[item.parent_path]
+        if item.parent is None:
+            # item is not being processed, delete it
+            del self._data[row_index]
+        else:
+            del self._data[parent_row][row_index]
+
         item.process_lock.unlock()
 
         self.endRemoveRows()
         self._data_lock.unlock()
-
-    def get_dir(self, index: QModelIndex) -> ImageDataItem:
-        item = self._item_from_index(index)
-        return item
 
     def get_next_unread(self) -> ImageDataItem:
         if self._paused:
@@ -292,10 +309,10 @@ class ImageDataListModel(QAbstractItemModel):
         self._active_item = None
         # naively iterate through the dictionary to get next task
         # (can't easily use a generator since inserts invalidate iterator)
-        for parent_dir in self._data.values():
-            for val in parent_dir:
-                if val.state == ProcessState.QUEUED:
-                    self._active_item = val
+        for parent_dir in self._data:
+            for val in (parent_dir.child_list or [parent_dir]):
+                if val.data.state == ProcessState.QUEUED:
+                    self._active_item = val.data
                     break
 
         self._data_lock.unlock()
