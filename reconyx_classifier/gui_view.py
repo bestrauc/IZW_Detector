@@ -210,7 +210,7 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
         for i, index in enumerate(selected_idx):
             # print(i, index.row(), index.column())
-            self.image_dir_model.del_dir(index)
+            self.image_dir_model.del_dir(QModelIndex(index))
 
     def print_info_status(self, status_msg):
         self.statusBar.setStyleSheet("color:black")

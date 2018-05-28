@@ -1,4 +1,4 @@
-from PyQt5.QtCore import QObject, QMutex, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot
 
 
 class ReadWorker(QObject):
@@ -13,7 +13,6 @@ class ReadWorker(QObject):
         super().__init__(parent)
 
         self.data = data
-        self.running_mutex = QMutex()
 
     # process signals are ignored if no outstanding directories left
     # the processing function blocks if reading is currently paused

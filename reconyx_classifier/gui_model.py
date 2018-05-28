@@ -1,8 +1,6 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
-from collections import OrderedDict
-
 from typing import Callable
 from data_utils.io import read_dir_metadata
 from enum import Enum
@@ -105,12 +103,6 @@ class ImageDataListModel(QAbstractItemModel):
         ind1 = self.createIndex(0, 0)
         ind2 = self.createIndex(self.rowCount()-1, self.columnCount()-1)
         self.dataChanged.emit(ind1, ind2)
-
-    def _item_from_index(self, index: QModelIndex):
-        row, col = index.row(), index.column()
-        item = [v for x in self._data.values() for v in x][row]
-
-        return item
 
     def path_data(self, index: QModelIndex,
                   role: int = Qt.DisplayRole):
@@ -219,13 +211,17 @@ class ImageDataListModel(QAbstractItemModel):
             return self.createIndex(row, column, self._data[row])
 
         parent = parent.internalPointer()
+
+        if row < 0 or row >= len(parent.child_list):
+            return QModelIndex()
+
         return self.createIndex(row, column, parent.child_list[row])
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         # worker thread synchronization
-        self._data_lock = QMutex()
+        self._data_lock = QMutex(QMutex.Recursive)
         self._unpause_lock = QMutex()
         self._unpause_signal = QWaitCondition()
 
@@ -276,25 +272,32 @@ class ImageDataListModel(QAbstractItemModel):
         row_index = index.row()
         item = index.internalPointer()
 
-        parent_item = index.parent()
-        parent_row = parent_item.row()
+        parent_index = index.parent()
+        parent_row = parent_index.row()
 
         self._data_lock.lock()
-        self.beginRemoveRows(QModelIndex(), row_index, row_index)
+        self.beginRemoveRows(parent_index, row_index, row_index)
 
-        # interrupt processing first if item is being processed
-        if not item.process_lock.tryLock():
-            # signal end and wait for the lock
-            self._active_item = None
-            item.process_lock.lock()
+        # try to acquire the lock of the item and all its children before proceeding
+        for child_item in ([item] + item.child_list):
+            if not child_item.data.process_lock.tryLock():
+                # signal end and wait for the lock
+                self._active_item = None
+                child_item.data.process_lock.lock()
 
+        # at this point we know the item is not being processed anymore
+        # if it's a root node, delete it (all sub-nodes along with it)
         if item.parent is None:
-            # item is not being processed, delete it
             del self._data[row_index]
         else:
-            del self._data[parent_row][row_index]
+            del self._data[parent_row].child_list[row_index]
 
-        item.process_lock.unlock()
+            # child_list may have become empty now - delete the whole root
+            if len(self._data[parent_row].child_list) == 0:
+                self.del_dir(parent_index)
+
+        for child_item in ([item] + item.child_list):
+            child_item.data.process_lock.unlock()
 
         self.endRemoveRows()
         self._data_lock.unlock()
