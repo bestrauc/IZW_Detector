@@ -198,6 +198,7 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
             caption="Select input directory.")
 
         self.image_dir_model.add_dir(input_dir)
+        self.directoryList.expandAll()
 
     def classify_directories(self):
         if not self.image_dir_model.all_scanned():
