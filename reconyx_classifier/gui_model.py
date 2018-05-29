@@ -200,8 +200,10 @@ class ImageDataListModel(QAbstractItemModel):
         if child_obj is None or child_obj.parent is None:
             return QModelIndex()
         else:
-            # TODO: setting row to 0 is probably not correct
-            return self.createIndex(0, 0, child_obj.parent)
+            # find the index of the parent. Somewhat inefficient
+            # but the quickest solution for changing indices
+            parent_row = self._data.index(child_obj.parent)
+            return self.createIndex(parent_row, 0, child_obj.parent)
 
     def index(self, row: int, column: int, parent: QModelIndex = ...):
         if not parent.isValid():
