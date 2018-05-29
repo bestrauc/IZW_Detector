@@ -8,6 +8,12 @@ from enum import Enum
 import os
 
 
+class ClassificationOptions:
+    def __init__(self, output_dir, classification_suffix):
+        self.output_dir = output_dir
+        self.classification_suffix = classification_suffix
+
+
 class ProcessState(Enum):
     QUEUED = 0
     IN_PROG = 1
@@ -145,21 +151,12 @@ class ImageDataListModel(QAbstractItemModel):
         item = node.data
         col = index.column()
 
-        # if it's just a root item, show its path
-        # if len(node.child_list) > 0:
-        #     return self.
-
         # column 0 stores directory paths and their formatting, etc.
         if col == 0:
             return self.path_data(index, role)
 
-        # column 1 stores the output paths
+        # column 1 stores the processing state
         if col == 1:
-            if role == Qt.EditRole:
-                return item.data_path + "_classified"
-
-        # column 2 stores the processing state
-        if col == 2:
             if role == Qt.EditRole:
                 if item.state == ProcessState.QUEUED:
                     return "Waiting for directory scan.."
@@ -190,7 +187,7 @@ class ImageDataListModel(QAbstractItemModel):
         return 0
 
     def columnCount(self, parent: QModelIndex = QModelIndex(), *args, **kwargs):
-        return 3
+        return 2
 
     def parent(self, child: QModelIndex):
         if not child.isValid():
@@ -221,6 +218,12 @@ class ImageDataListModel(QAbstractItemModel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+
+        # set up default options. Relative output path to dir 'output/'
+        # and classification outputs end with the output "input_labeled"
+        self.options = ClassificationOptions(
+            output_dir=os.path.join(os.getcwd(), "output"),
+            classification_suffix="labeled")
 
         # worker thread synchronization
         self._data_lock = QMutex(QMutex.Recursive)

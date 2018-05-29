@@ -1,6 +1,7 @@
 <RCC>
   <qresource prefix="/images">
     <file>hourglass.svg</file>
+    <file>select-folder-interface-outlined-button.svg</file>
     <file>continue-processing.svg</file>
     <file>remove-folder-interface-outlined-button.svg</file>
     <file>add-folder-interface-outlined-button.svg</file>

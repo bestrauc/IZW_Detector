@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import *
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from gui_model import ImageDataListModel, ProcessState
+from gui_model import ImageDataListModel, ClassificationOptions
 from gui_utils import ReadWorker
 import design
 
@@ -157,19 +157,24 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.startButton.clicked.connect(self.image_dir_model.continue_reading)
         self.stopButton.clicked.connect(self.image_dir_model.pause_reading)
         self.classifyButton.clicked.connect(self.classify_directories)
+        self.outputDirButton.clicked.connect(self.set_output_dir)
 
         # set up a mapper that displays more detailed information
         # about model data, such as image metadata and output path
         self.dir_info_mapper = QDataWidgetMapper()
         self.dir_info_mapper.setModel(self.image_dir_model)
-        self.dir_info_mapper.addMapping(self.imageNumLabel, 2, b"text")
-        self.dir_info_mapper.addMapping(self.outputDirEdit, 1)
+        self.dir_info_mapper.addMapping(self.imageNumLabel, 1, b"text")
+
+        self.statBox.hide()
+
+        # show default output directory
+        self.outputDirEdit.setText(self.image_dir_model.options.output_dir)
 
         # set up the selection behavior for clicking items
         self.directoryList.selectionModel().selectionChanged.connect(
-            self.set_info)
+            self.clear_info)
         self.directoryList.selectionModel().currentRowChanged.connect(
-            self.dir_info_mapper.setCurrentModelIndex)
+            self.tree_index_changed)
 
         # configure a delegate that lets us show progress icons on the right
         self.itemDelegate = ImageDataItemDelegate()
@@ -183,14 +188,35 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.read_worker.moveToThread(self.read_thread)
         self.read_thread.start()
 
-    def set_info(self, selection: QItemSelection):
+    def tree_index_changed(self, index: QModelIndex):
+        if not index.isValid():
+            return
+
+        # don't show information for root nodes
+        if index.internalPointer().child_list:
+            self.statBox.hide()
+            return
+
+        self.statBox.show()
+        self.dir_info_mapper.setRootIndex(index.parent())
+        self.dir_info_mapper.setCurrentModelIndex(index)
+
+    def clear_info(self, selection: QItemSelection):
         if len(selection.indexes()) == 0:
             # self.statusManager.set_error_state()
+            self.statBox.hide()
             self.imageNumLabel.setText("No input directory selected")
-            self.outputDirEdit.setText("")
-            self.outputDirEdit.setEnabled(False)
-        else:
-            self.outputDirEdit.setEnabled(True)
+
+    def set_output_dir(self):
+        input_dir = QFileDialog.getExistingDirectory(
+            caption="Select output directory.")
+
+        # don't change anything if no directory was selected
+        if input_dir == '':
+            return
+
+        self.outputDirEdit.setText(input_dir)
+        self.image_dir_model.options.output_dir = input_dir
 
     def add_input_dir(self):
         # let the user select the target directory
