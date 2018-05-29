@@ -1,10 +1,12 @@
 from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
-
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from gui_model import ImageDataListModel, ClassificationOptions
 from gui_utils import ReadWorker
+
+import time
+
 import design
 
 
@@ -60,10 +62,58 @@ class StatusWidgetManager:
         self.progressBar.setValue(percent)
 
     def set_success_state(self):
-        """Hide start/stop buttons and indicate complete progress."""
+        """Hide start/stop buttons and indicate complete p   rogress."""
         self.reset_state()
         self.statusChanger.hide()
         self.progressBar.setValue(100)
+
+
+class StatusBarManager:
+    def __init__(self, statusBar: QStatusBar, statusManager: StatusWidgetManager):
+        self.statusBar = statusBar
+        self.statusManager = statusManager
+
+        self.locked_until = 0
+
+    def _check_lock(self):
+        return time.time() > self.locked_until
+
+    def print_info_status(self, status_msg, color="black", lock_seconds=0, ignore_lock=False):
+        if not self._check_lock() and not ignore_lock:
+            return
+
+        self.statusBar.setStyleSheet("color:{}".format(color))
+        self.statusBar.showMessage(status_msg)
+
+        self.locked_until = time.time() + lock_seconds
+
+    def print_error_status(self, status_msg, lock_seconds=0):
+        if not self._check_lock():
+            return
+
+        self.print_info_status(status_msg, color="red", lock_seconds=lock_seconds)
+
+    def update_success(self):
+        self.print_info_status("Images successfully read", ignore_lock=True)
+
+    def update_error(self, args):
+        data, err = args
+
+        if isinstance(err, FileNotFoundError):
+            self.statusManager.set_error_state()
+            self.print_error_status("Could not find any Reconxy images.")
+        elif isinstance(err, InterruptedError):
+            self.statusManager.set_interrupted_state()
+            self.print_info_status("Image scan interrupted.", ignore_lock=True)
+        else:
+            raise NotImplementedError
+
+    def update_progress(self, percent):
+        self.statusManager.set_update_state(percent)
+        self.print_info_status("Scanning files..")
+
+    def finish_reader_success(self):
+        self.statusManager.set_success_state()
 
 
 class ClassificationApp(QMainWindow, design.Ui_MainWindow):
@@ -128,13 +178,15 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         # add widget with buttons and progress bar to the status bar
         self.statusBar.addPermanentWidget(self.statusManager.statusWidget)
 
+        self.statusBarManager = StatusBarManager(self.statusBar, self.statusManager)
+
     def _configure_read_worker(self):
         # configure reader thread
         read_worker = ReadWorker(self.image_dir_model)
-        read_worker.result.connect(self.update_success)
-        read_worker.error.connect(self.update_error)
-        read_worker.progress.connect(self.update_progress)
-        read_worker.finished.connect(self.finish_reader_success)
+        read_worker.result.connect(self.statusBarManager.update_success)
+        read_worker.error.connect(self.statusBarManager.update_error)
+        read_worker.progress.connect(self.statusBarManager.update_progress)
+        read_worker.finished.connect(self.statusBarManager.finish_reader_success)
 
         return read_worker
 
@@ -227,8 +279,13 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.directoryList.expandAll()
 
     def classify_directories(self):
-        if not self.image_dir_model.all_scanned():
-            pass
+        scanned, success = self.image_dir_model.scan_status()
+        if not scanned:
+            self.statusBarManager.print_info_status("Please wait for directory scans to finish.", color="blue",
+                                                    lock_seconds=2)
+        elif not success:
+            self.statusBarManager.print_error_status("No valid images found during directory scan.",
+                                                     lock_seconds=2)
 
     def remove_selected_dirs(self):
         selected_idx = [QPersistentModelIndex(index) for index in
@@ -236,35 +293,4 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
                         if index.column() == 0]
 
         for i, index in enumerate(selected_idx):
-            # print(i, index.row(), index.column())
             self.image_dir_model.del_dir(QModelIndex(index))
-
-    def print_info_status(self, status_msg):
-        self.statusBar.setStyleSheet("color:black")
-        self.statusBar.showMessage(status_msg)
-
-    def print_error_status(self, status_msg):
-        self.statusBar.setStyleSheet("color:red")
-        self.statusBar.showMessage(status_msg)
-
-    def update_success(self, data):
-        self.print_info_status("Images successfully read")
-
-    def update_error(self, args):
-        data, err = args
-
-        if isinstance(err, FileNotFoundError):
-            self.statusManager.set_error_state()
-            self.print_error_status("Could not find any Reconxy images.")
-        elif isinstance(err, InterruptedError):
-            self.statusManager.set_interrupted_state()
-            self.print_info_status("Image scan interrupted.")
-        else:
-            raise NotImplementedError
-
-    def update_progress(self, percent):
-        self.statusManager.set_update_state(percent)
-        self.print_info_status("Scanning files..")
-
-    def finish_reader_success(self):
-        self.statusManager.set_success_state()

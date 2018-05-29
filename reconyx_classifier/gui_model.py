@@ -1,9 +1,12 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
-from typing import Callable
-from data_utils.io import read_dir_metadata
 from enum import Enum
+from itertools import chain
+
+from data_utils.io import read_dir_metadata
+
+from typing import Callable
 
 import os
 
@@ -327,12 +330,16 @@ class ImageDataListModel(QAbstractItemModel):
 
         return self._active_item
 
-    def all_scanned(self):
-        dir_states = [val.state.value for val in self._data.values()]
-        scanned = all([state > 1 for state in dir_states])
-        success = any([state == ProcessState.DONE for state in dir_states])
+    def scan_status(self):
+        single_dirs = [node for node in self._data if not node.child_list]
+        sub_dirs = [subnode for node in self._data for subnode in node.child_list
+                    if node.child_list]
 
-        return scanned and success
+        # all directories have to be processed and at least some have to be completed without error
+        scanned = all([node.data.state.value > 1 for node in chain(single_dirs, sub_dirs)])
+        success = any([node.data.state.value == ProcessState.DONE.value for node in chain(single_dirs, sub_dirs)])
+
+        return scanned, success
 
     def is_paused(self) -> bool:
         return self._active_item is None
