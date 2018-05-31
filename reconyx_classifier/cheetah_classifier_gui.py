@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import *
+from PyQt5.QtWidgets import QApplication
 
 from gui_view import ClassificationApp
 import sys

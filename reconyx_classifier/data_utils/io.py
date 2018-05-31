@@ -1,6 +1,7 @@
 from typing import List
 
 import os
+import pathlib
 
 import numpy as np
 import pandas as pd
@@ -211,9 +212,10 @@ def classification_to_dir(out_dir: str, data: pd.DataFrame, labels: List[str]):
         target_dir = os.path.abspath(os.path.join(out_dir, label))
         label_data = data[data.label == index]
         if len(label_data) > 0:
-            log_out.debug("Creating class directory {}".format(target_dir))
+            log_out.info("Creating class directory {}".format(target_dir))
             try:
-                os.mkdir(target_dir)
+                pathlib.Path(target_dir).mkdir(parents=True, exist_ok=True)
+                # os.mkdir(target_dir)
             except FileExistsError:
                 log_out.error("Class directory already exists.")
                 return

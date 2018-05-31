@@ -5,10 +5,12 @@ import keras.backend as K
 import keras.models
 import keras.utils
 
+from tensorflow import get_default_graph, Session, global_variables_initializer
+
 from keras.applications.inception_resnet_v2 import preprocess_input
 from keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
 
-from typing import Generator, List
+from typing import Generator, List, Callable
 
 import logging
 log = logging.getLogger("classifier")
@@ -65,13 +67,21 @@ class ImageClassifier:
         """
 
         log.info("Loading model from '{}'".format(model_path))
-        self.model = keras.models.load_model(model_path)
+        model = keras.models.load_model(model_path)
+        model._make_predict_function()
+
+        # store the session graph, else we get threading problems
+        graph = get_default_graph()
+        session = Session()
+        self.stored_models = (model, graph, session)
+
         self.batch_size = batch_size
         self.class_labels = class_labels
         log.info("Model successfully loaded")
 
     def classify_data(self, data: pd.DataFrame,
-                      classify_events: bool = True) -> pd.DataFrame:
+                      classify_events: bool = True,
+                      progress: Callable[[int], bool] = None) -> pd.DataFrame:
         """Classify the data described by a Pandas dataframe.
 
         :param data: pandas.DataFrame
@@ -95,8 +105,18 @@ class ImageClassifier:
         # build a sequence of images+metadata from the DataFrame
         data_seq = DataFrameSequence(data, self.batch_size)
 
-        preds = self.model.predict_generator(
-            data_seq, use_multiprocessing=True, verbose=1)
+        model, graph, session = self.stored_models
+        # use the stored session graph to make predictions
+        with graph.as_default():
+            with session.as_default():
+                session.run(global_variables_initializer())
+                preds = model.predict_generator(
+                    data_seq, use_multiprocessing=True, verbose=1)
+
+        # clear and rebuild session graph, just in case (threading issues)
+        # K.clear_session()
+
+        # TODO: progress check before this point to avoid changes
 
         # store prediction probabilities in the DataFrame
         data['predict_probs'] = preds.tolist()

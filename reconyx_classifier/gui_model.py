@@ -5,26 +5,31 @@ from enum import Enum
 from itertools import chain
 
 from gui_utils import ReadWorker
-
-from data_utils.io import read_dir_metadata
-from data_utils.classifier import ImageClassifier
+from data_utils.io import read_dir_metadata, classification_to_dir
 
 from typing import Callable
 
 import os
 
+import logging
+gui_log = logging.getLogger("gui")
+
 
 class ClassificationOptions:
-    def __init__(self, output_dir, classification_suffix):
+    def __init__(self, output_dir, classification_suffix,
+                 model_path, batch_size, labels):
         self.output_dir = output_dir
         self.classification_suffix = classification_suffix
+        self.model_path = model_path
+        self.batch_size = batch_size
+        self.labels = labels
 
 
 class ProcessState(Enum):
     QUEUED = 0
     IN_PROG = 1
     FAILED = 2
-    DONE = 3
+    READ = 3
 
 
 class TreeNode:
@@ -88,7 +93,7 @@ class ImageDataItem(QObject):
             self.metadata = read_dir_metadata(
                 self.data_path,
                 progress_callback=progress_callback)
-            self.state = ProcessState.DONE
+            self.state = ProcessState.READ
         except FileNotFoundError as err:
             self.state = ProcessState.FAILED
             raise err
@@ -101,27 +106,18 @@ class ImageDataItem(QObject):
 
         return True
 
-    def classify_data(self):
-        """Classifies the data in the `metadata` field.
-
-        The data has to be read via `read_data` before.
-        """
-
-        if self.metadata is None:
-            raise ValueError("Image metadata not found. Call `read_data` first")
-
 
 class ImageData:
     def __init__(self, parent_model):
         self._data = []
 
+        # could expose signals to models, but we just store a reference
+        self.model = parent_model
+
         # worker thread synchronization
         self._data_lock = QMutex(QMutex.Recursive)
         self._unpause_lock = QMutex()
         self._unpause_signal = QWaitCondition()
-
-        self.model = parent_model
-
         # processing state
         self._paused = False
         self._active_item = None
@@ -221,14 +217,27 @@ class ImageData:
 
         return self._active_item
 
-    def scan_status(self):
+    def get_scanned_dirs(self):
         single_dirs = [node for node in self._data if not node.child_list]
-        sub_dirs = [subnode for node in self._data for subnode in node.child_list
+        sub_dirs = [subnode for node in self._data
+                    for subnode in node.child_list
                     if node.child_list]
 
-        # all directories have to be processed and at least some have to be completed without error
-        scanned = all([node.data.state.value > 1 for node in chain(single_dirs, sub_dirs)])
-        success = any([node.data.state.value == ProcessState.DONE.value for node in chain(single_dirs, sub_dirs)])
+        return [node for node in chain(single_dirs, sub_dirs)
+                if node.data.state.value == ProcessState.READ.value]
+
+    def scan_status(self):
+        single_dirs = [node for node in self._data if not node.child_list]
+        sub_dirs = [subnode for node in self._data
+                    for subnode in node.child_list
+                    if node.child_list]
+
+        # all directories have to be processed and at
+        # least some have to be completed without error
+        scanned = all([node.data.state.value > 1
+                       for node in chain(single_dirs, sub_dirs)])
+        success = any([node.data.state.value == ProcessState.READ.value
+                       for node in chain(single_dirs, sub_dirs)])
 
         return scanned, success
 
@@ -249,6 +258,44 @@ class ImageDataListModel(QAbstractItemModel):
     """Implements a ListModel interface for a set of image directories."""
 
     read_signal = pyqtSignal()
+    classify_signal = pyqtSignal()
+    init_classifier = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        # set up default options. Relative output path to dir 'output/'
+        # and classification outputs end with the output "input_labeled"
+        self.options = ClassificationOptions(
+            output_dir=os.path.join(os.getcwd(), "output"),
+            classification_suffix="labeled",
+            model_path="model/inception-resnet-v2-cheetahs.h5",
+            batch_size=8,
+            labels=['unknown', 'cheetah', 'leopard']
+        )
+
+        # internal data store
+        self._image_data = ImageData(parent_model=self)
+
+        # prepare processing state icons
+        pixmap = QPixmap(20, 20)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        self.none_icon = QIcon(pixmap)
+        self.prog_icon = QIcon(QPixmap(":/images/hourglass.svg").scaled(20, 20))
+
+        # configure reader and start its thread
+        self.read_thread = QThread(self)
+        self.read_worker = ReadWorker(self._image_data, self.options)
+
+        self.read_signal.connect(
+            self.read_worker.process_directories)
+        self.classify_signal.connect(
+            self.read_worker.classify_directories)
+        self.read_worker.moveToThread(self.read_thread)
+        self.read_thread.start()
+
+        self.init_classifier.connect(self.read_worker.initialize_classifier)
+        self.init_classifier.emit()
 
     @pyqtSlot()
     def changed_dir_item(self):
@@ -268,7 +315,7 @@ class ImageDataListModel(QAbstractItemModel):
         # set background of the directory depending on processing state
         # Successful read: Green. No images found: Red. Else no color.
         if role == Qt.BackgroundColorRole and item.state != ProcessState.QUEUED:
-            if item.state == ProcessState.DONE:
+            if item.state == ProcessState.READ:
                 return QColor(173, 255, 47, 60)
             elif item.state == ProcessState.FAILED:
                 return QColor(255, 0, 0, 50)
@@ -310,7 +357,7 @@ class ImageDataListModel(QAbstractItemModel):
                     return "No Reconyx images found"
                 if item.state == ProcessState.IN_PROG:
                     return "Waiting for scan to finish.."
-                if item.state == ProcessState.DONE:
+                if item.state == ProcessState.READ:
                     return "{} images found in {} events".format(
                        len(item.metadata),
                        item.metadata['event_key_simple'].nunique()
@@ -362,33 +409,6 @@ class ImageDataListModel(QAbstractItemModel):
 
         return self.createIndex(row, column, parent.child_list[row])
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-
-        # set up default options. Relative output path to dir 'output/'
-        # and classification outputs end with the output "input_labeled"
-        self.options = ClassificationOptions(
-            output_dir=os.path.join(os.getcwd(), "output"),
-            classification_suffix="labeled")
-
-        # internal data store
-        self._image_data = ImageData(parent_model=self)
-
-        # prepare processing state icons
-        pixmap = QPixmap(20, 20)
-        pixmap.fill(QColor(0, 0, 0, 0))
-        self.none_icon = QIcon(pixmap)
-        self.prog_icon = QIcon(QPixmap(":/images/hourglass.svg").scaled(20, 20))
-
-        # configure reader and start its thread
-        self.read_thread = QThread(self)
-        self.read_worker = ReadWorker(self._image_data)
-
-        self.read_signal.connect(
-            self.read_worker.process_directories)
-        self.read_worker.moveToThread(self.read_thread)
-        self.read_thread.start()
-
     def connect_status_signals(self, statusBar):
         self.read_worker.result.connect(statusBar.update_success)
         self.read_worker.error.connect(statusBar.update_error)
@@ -419,3 +439,6 @@ class ImageDataListModel(QAbstractItemModel):
 
     def continue_reading(self):
         self._image_data.continue_reading()
+
+    def start_classification(self):
+        self.classify_signal.emit()

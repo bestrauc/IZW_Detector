@@ -2,7 +2,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from gui_model import ImageDataListModel, ClassificationOptions
+from gui_model import ImageDataListModel
 
 import time
 
@@ -107,9 +107,9 @@ class StatusBarManager:
         else:
             raise NotImplementedError
 
-    def update_progress(self, percent):
+    def update_progress(self, percent: int, message: str):
         self.statusManager.set_update_state(percent)
-        self.print_info_status("Scanning files..")
+        self.print_info_status(message)
 
     def finish_reader_success(self):
         self.statusManager.set_success_state()
@@ -238,7 +238,6 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
     def clear_info(self, selection: QItemSelection):
         if len(selection.indexes()) == 0:
-            print("Selection cleared")
             # self.statusManager.set_error_state()
             self.statBox.hide()
             self.imageNumLabel.setText("No input directory selected")
@@ -271,6 +270,14 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         elif not success:
             self.statusBarManager.print_error_status(
                 "No valid images found during directory scan.", lock_seconds=2)
+        else:
+            # ready to scan
+            self.addDirButton.setEnabled(False)
+            self.removeDirButton.setEnabled(False)
+            self.image_dir_model.start_classification()
+
+            # self.addDirButton.setEnabled(True)
+            # self.removeDirButton.setEnabled(True)
 
     def remove_selected_dirs(self):
         selected_idx = [QPersistentModelIndex(index) for index in
@@ -279,5 +286,3 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
         for i, index in enumerate(selected_idx):
             self.image_dir_model.del_dir(QModelIndex(index))
-
-        self.directoryList.expandAll()
