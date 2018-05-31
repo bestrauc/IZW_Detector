@@ -3,7 +3,6 @@ from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from gui_model import ImageDataListModel, ClassificationOptions
-from gui_utils import ReadWorker
 
 import time
 
@@ -180,16 +179,6 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
         self.statusBarManager = StatusBarManager(self.statusBar, self.statusManager)
 
-    def _configure_read_worker(self):
-        # configure reader thread
-        read_worker = ReadWorker(self.image_dir_model)
-        read_worker.result.connect(self.statusBarManager.update_success)
-        read_worker.error.connect(self.statusBarManager.update_error)
-        read_worker.progress.connect(self.statusBarManager.update_progress)
-        read_worker.finished.connect(self.statusBarManager.finish_reader_success)
-
-        return read_worker
-
     def __init__(self):
         super(self.__class__, self).__init__()
         self.setupUi(self)
@@ -197,6 +186,8 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
         # connect this view to the model
         self.image_dir_model = ImageDataListModel()
+        self.image_dir_model.connect_status_signals(self.statusBarManager)
+
         self.directoryList.setModel(self.image_dir_model)
 
         # hide all columns except the first one
@@ -232,14 +223,6 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.itemDelegate = ImageDataItemDelegate()
         self.directoryList.setItemDelegate(self.itemDelegate)
 
-        # configure reader and start its thread
-        self.read_thread = QThread(self)
-        self.read_worker = self._configure_read_worker()
-        self.image_dir_model.read_signal.connect(
-            self.read_worker.process_directories)
-        self.read_worker.moveToThread(self.read_thread)
-        self.read_thread.start()
-
     def tree_index_changed(self, index: QModelIndex):
         if not index.isValid():
             return
@@ -255,6 +238,7 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
     def clear_info(self, selection: QItemSelection):
         if len(selection.indexes()) == 0:
+            print("Selection cleared")
             # self.statusManager.set_error_state()
             self.statBox.hide()
             self.imageNumLabel.setText("No input directory selected")
@@ -281,11 +265,12 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
     def classify_directories(self):
         scanned, success = self.image_dir_model.scan_status()
         if not scanned:
-            self.statusBarManager.print_info_status("Please wait for directory scans to finish.", color="blue",
-                                                    lock_seconds=2)
+            self.statusBarManager.print_info_status(
+                "Please wait for directory scans to finish.",
+                color="blue", lock_seconds=2)
         elif not success:
-            self.statusBarManager.print_error_status("No valid images found during directory scan.",
-                                                     lock_seconds=2)
+            self.statusBarManager.print_error_status(
+                "No valid images found during directory scan.", lock_seconds=2)
 
     def remove_selected_dirs(self):
         selected_idx = [QPersistentModelIndex(index) for index in
@@ -294,3 +279,5 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
         for i, index in enumerate(selected_idx):
             self.image_dir_model.del_dir(QModelIndex(index))
+
+        self.directoryList.expandAll()

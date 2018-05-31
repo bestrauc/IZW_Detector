@@ -4,7 +4,10 @@ from PyQt5.QtGui import *
 from enum import Enum
 from itertools import chain
 
+from gui_utils import ReadWorker
+
 from data_utils.io import read_dir_metadata
+from data_utils.classifier import ImageClassifier
 
 from typing import Callable
 
@@ -99,7 +102,147 @@ class ImageDataItem(QObject):
         return True
 
     def classify_data(self):
-        pass
+        """Classifies the data in the `metadata` field.
+
+        The data has to be read via `read_data` before.
+        """
+
+        if self.metadata is None:
+            raise ValueError("Image metadata not found. Call `read_data` first")
+
+
+class ImageData:
+    def __init__(self, parent_model):
+        self._data = []
+
+        # worker thread synchronization
+        self._data_lock = QMutex(QMutex.Recursive)
+        self._unpause_lock = QMutex()
+        self._unpause_signal = QWaitCondition()
+
+        self.model = parent_model
+
+        # processing state
+        self._paused = False
+        self._active_item = None
+
+    def __len__(self):
+        return len(self._data)
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def index(self, val):
+        return self._data.index(val)
+
+    def add_dir(self, dir_path: str):
+        dir_data = ImageDataItem(dir_path)
+        dir_root = TreeNode(dir_data)
+
+        # if no input selected or duplicate path, do not add
+        # (only matches by path, does not recognize symlinks etc.)
+        if dir_path == '' or dir_root in self._data:
+            return
+
+        self._data_lock.lock()
+
+        # if the directory has subdirectories, add them instead
+        # else we just add the selected directory on its own
+        subdirs = [os.path.join(dir_path, dirname)
+                   for dirname in os.listdir(dir_path)
+                   if os.path.isdir(os.path.join(dir_path, dirname))]
+
+        for iter_path in subdirs:
+            child_data = ImageDataItem(iter_path)
+            child_data.change_signal.connect(self.model.changed_dir_item)
+            dir_root.add_child(child_data)
+            self.model.read_signal.emit()
+
+        # if no subdirectories found, emit a read signal
+        # to try to scan the root instead
+        if len(subdirs) == 0:
+            self.model.read_signal.emit()
+
+        self._data.append(dir_root)
+
+        self._data_lock.unlock()
+
+    def del_dir(self, index: QModelIndex):
+        row_index = index.row()
+        item = index.internalPointer()
+
+        parent_index = index.parent()
+        parent_row = parent_index.row()
+
+        self._data_lock.lock()
+
+        # try to acquire the lock of the item and its children before proceeding
+        for child_item in ([item] + item.child_list):
+            if not child_item.data.process_lock.tryLock():
+                # signal end and wait for the lock
+                self._active_item = None
+                child_item.data.process_lock.lock()
+
+        keep_root = True
+        # at this point we know the item is not being processed anymore
+        # if it's a root node, delete it (all sub-nodes along with it)
+        if item.parent is None:
+            del self._data[row_index]
+        else:
+            del self._data[parent_row].child_list[row_index]
+            keep_root = len(self._data[parent_row].child_list) > 0
+
+        for child_item in ([item] + item.child_list):
+            child_item.data.process_lock.unlock()
+
+        self._data_lock.unlock()
+
+        # child_list may have become empty now - if that is the case
+        # we return False and tell the caller to delete the root too
+        return keep_root
+
+    def get_next_unread(self) -> ImageDataItem:
+        if self._paused:
+            self._unpause_lock.lock()
+            self._unpause_signal.wait(self._unpause_lock)
+            self._unpause_lock.unlock()
+
+        self._data_lock.lock()
+        self._active_item = None
+        # naively iterate through the dictionary to get next task
+        # (can't easily use a generator since inserts invalidate iterator)
+        for parent_dir in self._data:
+            for val in (parent_dir.child_list or [parent_dir]):
+                if val.data.state == ProcessState.QUEUED:
+                    self._active_item = val.data
+                    break
+
+        self._data_lock.unlock()
+
+        return self._active_item
+
+    def scan_status(self):
+        single_dirs = [node for node in self._data if not node.child_list]
+        sub_dirs = [subnode for node in self._data for subnode in node.child_list
+                    if node.child_list]
+
+        # all directories have to be processed and at least some have to be completed without error
+        scanned = all([node.data.state.value > 1 for node in chain(single_dirs, sub_dirs)])
+        success = any([node.data.state.value == ProcessState.DONE.value for node in chain(single_dirs, sub_dirs)])
+
+        return scanned, success
+
+    def is_paused(self) -> bool:
+        return self._active_item is None
+
+    def pause_reading(self):
+        self._paused = True
+        self._active_item = None
+
+    def continue_reading(self):
+        self._paused = False
+        self._unpause_signal.wakeAll()
+        self.model.read_signal.emit()
 
 
 class ImageDataListModel(QAbstractItemModel):
@@ -108,7 +251,7 @@ class ImageDataListModel(QAbstractItemModel):
     read_signal = pyqtSignal()
 
     @pyqtSlot()
-    def _changed_dir_item(self):
+    def changed_dir_item(self):
         ind1 = self.createIndex(0, 0)
         ind2 = self.createIndex(self.rowCount()-1, self.columnCount()-1)
         self.dataChanged.emit(ind1, ind2)
@@ -179,7 +322,7 @@ class ImageDataListModel(QAbstractItemModel):
         """Necessary override of rowCount. Returns number of directories."""
         # return the number of top level directories
         if not parent.isValid():
-            return len(self._data)
+            return len(self._image_data)
 
         parent_obj = parent.internalPointer()
 
@@ -202,15 +345,15 @@ class ImageDataListModel(QAbstractItemModel):
         else:
             # find the index of the parent. Somewhat inefficient
             # but the quickest solution for changing indices
-            parent_row = self._data.index(child_obj.parent)
+            parent_row = self._image_data.index(child_obj.parent)
             return self.createIndex(parent_row, 0, child_obj.parent)
 
     def index(self, row: int, column: int, parent: QModelIndex = ...):
         if not parent.isValid():
-            if row < 0 or row >= len(self._data):
+            if row < 0 or row >= len(self._image_data):
                 return QModelIndex()
 
-            return self.createIndex(row, column, self._data[row])
+            return self.createIndex(row, column, self._image_data[row])
 
         parent = parent.internalPointer()
 
@@ -228,14 +371,8 @@ class ImageDataListModel(QAbstractItemModel):
             output_dir=os.path.join(os.getcwd(), "output"),
             classification_suffix="labeled")
 
-        # worker thread synchronization
-        self._data_lock = QMutex(QMutex.Recursive)
-        self._unpause_lock = QMutex()
-        self._unpause_signal = QWaitCondition()
-
-        self._data = []
-        self._paused = False
-        self._active_item = None
+        # internal data store
+        self._image_data = ImageData(parent_model=self)
 
         # prepare processing state icons
         pixmap = QPixmap(20, 20)
@@ -243,112 +380,42 @@ class ImageDataListModel(QAbstractItemModel):
         self.none_icon = QIcon(pixmap)
         self.prog_icon = QIcon(QPixmap(":/images/hourglass.svg").scaled(20, 20))
 
+        # configure reader and start its thread
+        self.read_thread = QThread(self)
+        self.read_worker = ReadWorker(self._image_data)
+
+        self.read_signal.connect(
+            self.read_worker.process_directories)
+        self.read_worker.moveToThread(self.read_thread)
+        self.read_thread.start()
+
+    def connect_status_signals(self, statusBar):
+        self.read_worker.result.connect(statusBar.update_success)
+        self.read_worker.error.connect(statusBar.update_error)
+        self.read_worker.progress.connect(statusBar.update_progress)
+        self.read_worker.finished.connect(statusBar.finish_reader_success)
+
     def add_dir(self, dir_path: str):
-        dir_data = ImageDataItem(dir_path)
-        dir_root = TreeNode(dir_data)
-
-        # if no input selected or duplicate path, do not add
-        # (only matches by path, does not recognize symlinks etc.)
-        if dir_path == '' or dir_root in self._data:
-            return
-
-        self._data_lock.lock()
         self.beginInsertRows(QModelIndex(), self.rowCount(), self.rowCount())
-
-        # if the directory has subdirectories, add them instead
-        # else we just add the selected directory on its own
-        subdirs = [os.path.join(dir_path, dirname)
-                   for dirname in os.listdir(dir_path)
-                   if os.path.isdir(os.path.join(dir_path, dirname))]
-
-        for iter_path in subdirs:
-            child_data = ImageDataItem(iter_path)
-            child_data.change_signal.connect(self._changed_dir_item)
-            dir_root.add_child(child_data)
-            self.read_signal.emit()
-
-        # if no subdirectories found, emit a read signal to try to scan the root instead
-        if len(subdirs) == 0:
-            self.read_signal.emit()
-
-        self._data.append(dir_root)
-
+        self._image_data.add_dir(dir_path)
         self.endInsertRows()
-        self._data_lock.unlock()
 
     def del_dir(self, index: QModelIndex):
         row_index = index.row()
-        item = index.internalPointer()
-
         parent_index = index.parent()
-        parent_row = parent_index.row()
 
-        self._data_lock.lock()
         self.beginRemoveRows(parent_index, row_index, row_index)
-
-        # try to acquire the lock of the item and all its children before proceeding
-        for child_item in ([item] + item.child_list):
-            if not child_item.data.process_lock.tryLock():
-                # signal end and wait for the lock
-                self._active_item = None
-                child_item.data.process_lock.lock()
-
-        # at this point we know the item is not being processed anymore
-        # if it's a root node, delete it (all sub-nodes along with it)
-        if item.parent is None:
-            del self._data[row_index]
-        else:
-            del self._data[parent_row].child_list[row_index]
-
-            # child_list may have become empty now - delete the whole root
-            if len(self._data[parent_row].child_list) == 0:
-                self.del_dir(parent_index)
-
-        for child_item in ([item] + item.child_list):
-            child_item.data.process_lock.unlock()
-
+        keep_root = self._image_data.del_dir(index)
         self.endRemoveRows()
-        self._data_lock.unlock()
 
-    def get_next_unread(self) -> ImageDataItem:
-        if self._paused:
-            self._unpause_lock.lock()
-            self._unpause_signal.wait(self._unpause_lock)
-            self._unpause_lock.unlock()
-
-        self._data_lock.lock()
-        self._active_item = None
-        # naively iterate through the dictionary to get next task
-        # (can't easily use a generator since inserts invalidate iterator)
-        for parent_dir in self._data:
-            for val in (parent_dir.child_list or [parent_dir]):
-                if val.data.state == ProcessState.QUEUED:
-                    self._active_item = val.data
-                    break
-
-        self._data_lock.unlock()
-
-        return self._active_item
+        if not keep_root:
+            self.del_dir(parent_index)
 
     def scan_status(self):
-        single_dirs = [node for node in self._data if not node.child_list]
-        sub_dirs = [subnode for node in self._data for subnode in node.child_list
-                    if node.child_list]
-
-        # all directories have to be processed and at least some have to be completed without error
-        scanned = all([node.data.state.value > 1 for node in chain(single_dirs, sub_dirs)])
-        success = any([node.data.state.value == ProcessState.DONE.value for node in chain(single_dirs, sub_dirs)])
-
-        return scanned, success
-
-    def is_paused(self) -> bool:
-        return self._active_item is None
+        return self._image_data.scan_status()
 
     def pause_reading(self):
-        self._paused = True
-        self._active_item = None
+        self._image_data.pause_reading()
 
     def continue_reading(self):
-        self._paused = False
-        self._unpause_signal.wakeAll()
-        self.read_signal.emit()
+        self._image_data.continue_reading()
