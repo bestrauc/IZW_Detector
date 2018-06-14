@@ -48,7 +48,7 @@ class DirectoryIteratorWithFname(Iterator):
                  batch_size=32, shuffle=True, seed=None,
                  data_format=None,
                  save_to_dir=None, save_prefix='', save_format='png',
-                 follow_links=False, interpolation='nearest'):
+                 follow_links=False, subset=None, interpolation='nearest'):
         if data_format is None:
             data_format = K.image_data_format()
         self.directory = directory
@@ -101,6 +101,7 @@ class DirectoryIteratorWithFname(Iterator):
         pool = multiprocessing.pool.ThreadPool()
         function_partial = partial(_count_valid_files_in_directory,
                                    white_list_formats=white_list_formats,
+                                   split=None,
                                    follow_links=follow_links)
         self.samples = sum(pool.map(function_partial,
                                     (os.path.join(directory, subdir)
@@ -116,7 +117,7 @@ class DirectoryIteratorWithFname(Iterator):
         i = 0
         for dirpath in (os.path.join(directory, subdir) for subdir in classes):
             results.append(pool.apply_async(_list_valid_filenames_in_directory,
-                                            (dirpath, white_list_formats,
+                                            (dirpath, white_list_formats, None,
                                              self.class_indices, follow_links)))
         for res in results:
             classes, filenames = res.get()
