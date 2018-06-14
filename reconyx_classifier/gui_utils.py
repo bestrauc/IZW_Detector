@@ -66,6 +66,8 @@ class ReadWorker(QObject):
                 self.finished.emit()
         except (FileNotFoundError, InterruptedError) as err:
             self.error.emit((item, err))
+        finally:
+            self.changed.emit()
 
     @pyqtSlot()
     def classify_directories(self):

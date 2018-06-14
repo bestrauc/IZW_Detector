@@ -48,8 +48,6 @@ class ImageDataItem(QObject):
     the image metadata and classify the images in the directory.
     """
 
-    change_signal = pyqtSignal()
-
     def __init__(self, data_path: str):
         super().__init__()
 
@@ -79,7 +77,6 @@ class ImageDataItem(QObject):
             return False
 
         self.state = ProcessState.READ_IN_PROG
-        self.change_signal.emit()
 
         try:
             self.metadata = read_dir_metadata(
@@ -93,7 +90,6 @@ class ImageDataItem(QObject):
             self.state = ProcessState.QUEUED
             raise err
         finally:
-            self.change_signal.emit()
             self.process_lock.unlock()
 
         return True
@@ -142,7 +138,6 @@ class ImageData:
 
         for iter_path in subdirs:
             child_data = ImageDataItem(iter_path)
-            child_data.change_signal.connect(self.model.update_view)
             dir_root.add_child(child_data)
             self.model.read_signal.emit()
 
@@ -290,13 +285,7 @@ class ImageDataListModel(QAbstractItemModel):
             self.read_worker.initialize_classifier)
         self.read_thread.start()
 
-        self.init_classifier.emit()
-
-    @pyqtSlot()
-    def changed_dir_item(self):
-        ind1 = self.createIndex(0, 0)
-        ind2 = self.createIndex(self.rowCount()-1, self.columnCount()-1)
-        self.dataChanged.emit(ind1, ind2)
+        # self.init_classifier.emit()
 
     def path_data(self, index: QModelIndex,
                   role: int = Qt.DisplayRole):
@@ -425,6 +414,7 @@ class ImageDataListModel(QAbstractItemModel):
         self.read_worker.notified.connect(statusBar.print_highlight_status)
         self.read_worker.changed.connect(self.update_view)
 
+    @pyqtSlot()
     def update_view(self):
         self.dataChanged.emit(QModelIndex(), QModelIndex())
 
