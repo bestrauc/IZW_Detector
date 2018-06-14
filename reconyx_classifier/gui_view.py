@@ -5,6 +5,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from gui_model import ImageDataListModel
 
 import time
+import os
 
 import design
 
@@ -18,7 +19,7 @@ class ImageDataItemDelegate(QStyledItemDelegate):
 class StatusWidgetManager:
     """StatusWidgetManager keeps status bar components in a consistent state."""
 
-    def __init__(self, statusChanger, progressBar):
+    def __init__(self, statusChanger, progressBar: QProgressBar):
         self.statusChanger = statusChanger
         self.progressBar = progressBar
 
@@ -38,8 +39,13 @@ class StatusWidgetManager:
         self.statusChanger.show()
         self.progressBar.show()
         self.progressBar.setValue(0)
+        self.progressBar.setMinimum(0)
+        self.progressBar.setMaximum(100)
         self.progressBar.setEnabled(True)
         self.statusWidget.show()
+
+    def hide_state(self):
+        self.statusWidget.hide()
 
     def set_error_state(self):
         """Hide the widget, since it's not informative for errors."""
@@ -66,6 +72,11 @@ class StatusWidgetManager:
         self.statusChanger.hide()
         self.progressBar.setValue(100)
 
+    def set_busy_state(self):
+        self.reset_state()
+        self.statusChanger.hide()
+        self.progressBar.setMaximum(0)
+
 
 class StatusBarManager:
     def __init__(self, statusBar: QStatusBar, statusManager: StatusWidgetManager):
@@ -86,6 +97,11 @@ class StatusBarManager:
 
         self.locked_until = time.time() + lock_seconds
 
+    def print_highlight_status(self, status_msg, hide_status=True):
+        self.print_info_status(status_msg, color="blue")
+        if hide_status:
+            self.statusManager.hide_state()
+
     def print_error_status(self, status_msg, lock_seconds=0):
         if not self._check_lock():
             return
@@ -103,7 +119,7 @@ class StatusBarManager:
             self.print_error_status("Could not find any Reconxy images.")
         elif isinstance(err, InterruptedError):
             self.statusManager.set_interrupted_state()
-            self.print_info_status("Image scan interrupted.", ignore_lock=True)
+            self.print_info_status(str(err), ignore_lock=True)
         else:
             raise NotImplementedError
 
@@ -223,6 +239,11 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.itemDelegate = ImageDataItemDelegate()
         self.directoryList.setItemDelegate(self.itemDelegate)
 
+        # tell that we are loading the model
+        self.statusBarManager.print_highlight_status(
+            "Loading Classification model", hide_status=False)
+        self.statusManager.set_busy_state()
+
     def tree_index_changed(self, index: QModelIndex):
         if not index.isValid():
             return
@@ -263,6 +284,7 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
 
     def classify_directories(self):
         scanned, success = self.image_dir_model.scan_status()
+
         if not scanned:
             self.statusBarManager.print_info_status(
                 "Please wait for directory scans to finish.",
@@ -271,13 +293,19 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
             self.statusBarManager.print_error_status(
                 "No valid images found during directory scan.", lock_seconds=2)
         else:
+            if os.listdir(self.image_dir_model.options.output_dir):
+                self.statusBarManager.print_error_status(
+                    "Please select an empty output directory.")
+
+                return
+
+            self.image_dir_model.continue_reading()
             # ready to scan
             self.addDirButton.setEnabled(False)
             self.removeDirButton.setEnabled(False)
             self.image_dir_model.start_classification()
-
-            # self.addDirButton.setEnabled(True)
-            # self.removeDirButton.setEnabled(True)
+            self.statusBarManager.print_info_status("Starting classification..")
+            self.statusManager.set_busy_state()
 
     def remove_selected_dirs(self):
         selected_idx = [QPersistentModelIndex(index) for index in

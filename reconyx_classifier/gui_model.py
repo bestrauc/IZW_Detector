@@ -1,11 +1,10 @@
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
-from enum import Enum
 from itertools import chain
 
-from gui_utils import ReadWorker
-from data_utils.io import read_dir_metadata, classification_to_dir
+from gui_utils import ReadWorker, ProcessState
+from data_utils.io import read_dir_metadata
 
 from typing import Callable
 
@@ -23,13 +22,6 @@ class ClassificationOptions:
         self.model_path = model_path
         self.batch_size = batch_size
         self.labels = labels
-
-
-class ProcessState(Enum):
-    QUEUED = 0
-    IN_PROG = 1
-    FAILED = 2
-    READ = 3
 
 
 class TreeNode:
@@ -86,7 +78,7 @@ class ImageDataItem(QObject):
         if not self.process_lock.tryLock():
             return False
 
-        self.state = ProcessState.IN_PROG
+        self.state = ProcessState.READ_IN_PROG
         self.change_signal.emit()
 
         try:
@@ -150,7 +142,7 @@ class ImageData:
 
         for iter_path in subdirs:
             child_data = ImageDataItem(iter_path)
-            child_data.change_signal.connect(self.model.changed_dir_item)
+            child_data.change_signal.connect(self.model.update_view)
             dir_root.add_child(child_data)
             self.model.read_signal.emit()
 
@@ -210,6 +202,7 @@ class ImageData:
         for parent_dir in self._data:
             for val in (parent_dir.child_list or [parent_dir]):
                 if val.data.state == ProcessState.QUEUED:
+                    self.model.update_view()
                     self._active_item = val.data
                     break
 
@@ -242,7 +235,7 @@ class ImageData:
         return scanned, success
 
     def is_paused(self) -> bool:
-        return self._active_item is None
+        return self._paused
 
     def pause_reading(self):
         self._paused = True
@@ -270,7 +263,8 @@ class ImageDataListModel(QAbstractItemModel):
             output_dir=os.path.join(os.getcwd(), "output"),
             classification_suffix="labeled",
             model_path="model/inception-resnet-v2-cheetahs.h5",
-            batch_size=8,
+            batch_size=16,
+            # labels=['cheetah', 'unknown', 'leopard']
             labels=['unknown', 'cheetah', 'leopard']
         )
 
@@ -292,9 +286,10 @@ class ImageDataListModel(QAbstractItemModel):
         self.classify_signal.connect(
             self.read_worker.classify_directories)
         self.read_worker.moveToThread(self.read_thread)
+        self.init_classifier.connect(
+            self.read_worker.initialize_classifier)
         self.read_thread.start()
 
-        self.init_classifier.connect(self.read_worker.initialize_classifier)
         self.init_classifier.emit()
 
     @pyqtSlot()
@@ -317,6 +312,8 @@ class ImageDataListModel(QAbstractItemModel):
         if role == Qt.BackgroundColorRole and item.state != ProcessState.QUEUED:
             if item.state == ProcessState.READ:
                 return QColor(173, 255, 47, 60)
+            elif item.state == ProcessState.CLASSIFIED:
+                return QColor(0, 191, 255, 60)
             elif item.state == ProcessState.FAILED:
                 return QColor(255, 0, 0, 50)
             else:
@@ -326,7 +323,8 @@ class ImageDataListModel(QAbstractItemModel):
             return item.state
 
         if role == Qt.DecorationRole:
-            if item.state == ProcessState.IN_PROG:
+            if item.state == ProcessState.READ_IN_PROG or \
+               item.state == ProcessState.CLASS_IN_PROG:
                 return self.prog_icon
 
             return self.none_icon
@@ -355,12 +353,22 @@ class ImageDataListModel(QAbstractItemModel):
                     return "Waiting for directory scan.."
                 if item.state == ProcessState.FAILED:
                     return "No Reconyx images found"
-                if item.state == ProcessState.IN_PROG:
+                if item.state == ProcessState.READ_IN_PROG:
                     return "Waiting for scan to finish.."
                 if item.state == ProcessState.READ:
                     return "{} images found in {} events".format(
                        len(item.metadata),
                        item.metadata['event_key_simple'].nunique()
+                    )
+
+                if item.state == ProcessState.CLASS_IN_PROG:
+                    return "Classifying images.."
+
+                if item.state == ProcessState.CLASSIFIED:
+                    return "{} images found in {} events\n{}".format(
+                        len(item.metadata),
+                        item.metadata['event_key_simple'].nunique(),
+                        "testing next line"
                     )
 
                 raise RuntimeError("Undefined state")
@@ -414,6 +422,11 @@ class ImageDataListModel(QAbstractItemModel):
         self.read_worker.error.connect(statusBar.update_error)
         self.read_worker.progress.connect(statusBar.update_progress)
         self.read_worker.finished.connect(statusBar.finish_reader_success)
+        self.read_worker.notified.connect(statusBar.print_highlight_status)
+        self.read_worker.changed.connect(self.update_view)
+
+    def update_view(self):
+        self.dataChanged.emit(QModelIndex(), QModelIndex())
 
     def add_dir(self, dir_path: str):
         self.beginInsertRows(QModelIndex(), self.rowCount(), self.rowCount())
