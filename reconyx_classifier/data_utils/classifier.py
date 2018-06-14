@@ -67,20 +67,19 @@ class ImageClassifier:
         """
 
         log.info("Loading model from '{}'".format(model_path))
-        model = keras.models.load_model(model_path)
-        model._make_predict_function()
 
         # store the session graph, else we get threading problems
-        graph = get_default_graph()
-        session = Session()
-        self.stored_models = (model, graph, session)
+        self.model = keras.models.load_model(model_path)
+        self.model._make_predict_function()
+
+        self.graph = get_default_graph()
 
         self.batch_size = batch_size
         self.class_labels = class_labels
         log.info("Model successfully loaded")
 
     def classify_data(self, data: pd.DataFrame,
-                      classify_events: bool = True,
+                      classify_events: bool = False,
                       progress: Callable[[int], bool] = None) -> pd.DataFrame:
         """Classify the data described by a Pandas dataframe.
 
@@ -105,26 +104,24 @@ class ImageClassifier:
         # build a sequence of images+metadata from the DataFrame
         data_seq = DataFrameSequence(data, self.batch_size)
 
-        model, graph, session = self.stored_models
+        all_preds = []
         # use the stored session graph to make predictions
-        with graph.as_default():
-            with session.as_default():
-                session.run(global_variables_initializer())
-                preds = model.predict_generator(
-                    data_seq, use_multiprocessing=True, verbose=1)
+        with self.graph.as_default():
+                for batch_idx in range(len(data_seq)):
+                    if progress and not progress((batch_idx*100)/len(data_seq)):
+                        raise InterruptedError("Classification interrupted.")
 
-        # clear and rebuild session graph, just in case (threading issues)
-        # K.clear_session()
+                    batch = data_seq[batch_idx]
+                    data_batch = data_to_matrix(batch)
+                    preds = self.model.predict_on_batch(data_batch)
+                    all_preds.extend(preds)
 
-        # TODO: progress check before this point to avoid changes
-
-        # store prediction probabilities in the DataFrame
-        data['predict_probs'] = preds.tolist()
+        data['predict_probs'] = all_preds
 
         # store the labels in the DataFrame. could just store indices
         # and resolve labels later, but for convenience we do it here
         if not classify_events:
-            data['label'] = np.take(self.class_labels, np.argmax(preds, axis=1))
+            data['label'] = data['predict_probs'].apply(np.argmax)
         else:
             # event gets the label of the maximum confidence prediction
             group_label = lambda x: np.argmax(np.concatenate(x.tolist())) \
@@ -169,6 +166,6 @@ class DataFrameSequence(keras.utils.Sequence):
 
     def __getitem__(self, index):
         batch = self.data[index * self.batch_size:(index + 1) * self.batch_size]
-        data_batch = data_to_matrix(batch)
+        # data_batch = data_to_matrix(batch)
 
-        return data_batch
+        return batch

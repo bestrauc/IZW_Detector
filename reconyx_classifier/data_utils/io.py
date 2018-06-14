@@ -224,4 +224,8 @@ def classification_to_dir(out_dir: str, data: pd.DataFrame, labels: List[str]):
                 src_path = os.path.abspath(row['path'])
                 dst_path = os.path.join(target_dir, row['filename'])
                 # log_out.debug("Copying {} to {}".format(src_path, dst_path))
-                os.symlink(src_path, dst_path)
+                try:
+                    os.symlink(src_path, dst_path)
+                except FileExistsError as err:
+                    log_out.error(err)
+
