@@ -53,6 +53,7 @@ class ImageDataItem(QObject):
 
         self.data_path = data_path
         self.metadata = None
+        self.label_freqs = None
         self.state = ProcessState.QUEUED
 
         self.process_lock = QMutex()
@@ -93,6 +94,18 @@ class ImageDataItem(QObject):
             self.process_lock.unlock()
 
         return True
+
+    def compute_class_freqs(self):
+        if self.state != ProcessState.CLASSIFIED:
+            return
+
+        self.label_freqs = self.metadata.label.value_counts()
+
+    def class_freq(self, index):
+        if index not in self.label_freqs:
+            return 0
+
+        return self.label_freqs[index]
 
 
 class ImageData:
@@ -259,7 +272,6 @@ class ImageDataListModel(QAbstractItemModel):
             classification_suffix="labeled",
             model_path="model/inception-resnet-v2-cheetahs.h5",
             batch_size=16,
-            # labels=['cheetah', 'unknown', 'leopard']
             labels=['unknown', 'cheetah', 'leopard']
         )
 
@@ -354,11 +366,17 @@ class ImageDataListModel(QAbstractItemModel):
                     return "Classifying images.."
 
                 if item.state == ProcessState.CLASSIFIED:
-                    return "{} images found in {} events\n{}".format(
-                        len(item.metadata),
-                        item.metadata['event_key_simple'].nunique(),
-                        "testing next line"
-                    )
+                    return "{} images found in {} events\n" \
+                           "{}".format(
+                            len(item.metadata),
+                            item.metadata['event_key_simple'].nunique(),
+                            '\t'.join(
+                                ["{}: {}".format(label, item.class_freq(idx))
+                                      for idx, label
+                                      in enumerate(self.options.labels)
+                                 ]
+                            )
+                        )
 
                 raise RuntimeError("Undefined state")
 

@@ -79,7 +79,7 @@ class ImageClassifier:
         log.info("Model successfully loaded")
 
     def classify_data(self, data: pd.DataFrame,
-                      classify_events: bool = False,
+                      classify_events: bool = True,
                       progress: Callable[[int], bool] = None) -> pd.DataFrame:
         """Classify the data described by a Pandas dataframe.
 

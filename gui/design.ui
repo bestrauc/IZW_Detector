@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>725</width>
-    <height>483</height>
+    <height>503</height>
    </rect>
   </property>
   <property name="mouseTracking">
@@ -166,13 +166,6 @@
          <string>Directory information</string>
         </property>
         <layout class="QHBoxLayout" name="horizontalLayout_2">
-         <item>
-          <widget class="QLabel" name="imageNum">
-           <property name="text">
-            <string>Images:</string>
-           </property>
-          </widget>
-         </item>
          <item>
           <spacer name="horizontalSpacer_2">
            <property name="orientation">

@@ -297,10 +297,15 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
             self.statusBarManager.print_error_status(
                 "No valid images found during directory scan.", lock_seconds=2)
         else:
-            if os.listdir(self.image_dir_model.options.output_dir):
+            out_path = self.image_dir_model.options.output_dir
+            if not (os.path.exists(out_path) and os.path.isdir(out_path)):
+                self.statusBarManager.print_error_status(
+                    "Please select an existing output directory")
+                return
+
+            if os.listdir(out_path):
                 self.statusBarManager.print_error_status(
                     "Please select an empty output directory.")
-
                 return
 
             self.image_dir_model.continue_reading()

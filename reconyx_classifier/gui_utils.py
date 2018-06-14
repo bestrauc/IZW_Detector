@@ -98,6 +98,7 @@ class ReadWorker(QObject):
                                 progress=self.report_classification_progress)
                 classification_to_dir(final_path, item.metadata, labels)
                 item.state = ProcessState.CLASSIFIED
+                item.compute_class_freqs()
                 self.changed.emit()
                 self.finished.emit()
             except InterruptedError as err:
