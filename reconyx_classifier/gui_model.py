@@ -285,7 +285,7 @@ class ImageDataListModel(QAbstractItemModel):
             self.read_worker.initialize_classifier)
         self.read_thread.start()
 
-        # self.init_classifier.emit()
+        self.init_classifier.emit()
 
     def path_data(self, index: QModelIndex,
                   role: int = Qt.DisplayRole):
