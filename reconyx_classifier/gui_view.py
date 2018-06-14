@@ -78,8 +78,9 @@ class StatusWidgetManager:
         self.progressBar.setMaximum(0)
 
 
-class StatusBarManager:
+class StatusBarManager(QObject):
     def __init__(self, statusBar: QStatusBar, statusManager: StatusWidgetManager):
+        super(StatusBarManager, self).__init__()
         self.statusBar = statusBar
         self.statusManager = statusManager
 
@@ -88,6 +89,7 @@ class StatusBarManager:
     def _check_lock(self):
         return time.time() > self.locked_until
 
+    @pyqtSlot(str)
     def print_info_status(self, status_msg, color="black", lock_seconds=0, ignore_lock=False):
         if not self._check_lock() and not ignore_lock:
             return
@@ -97,20 +99,20 @@ class StatusBarManager:
 
         self.locked_until = time.time() + lock_seconds
 
+    @pyqtSlot(str)
     def print_highlight_status(self, status_msg, hide_status=True):
         self.print_info_status(status_msg, color="blue")
         if hide_status:
             self.statusManager.hide_state()
 
+    @pyqtSlot(str)
     def print_error_status(self, status_msg, lock_seconds=0):
         if not self._check_lock():
             return
 
         self.print_info_status(status_msg, color="red", lock_seconds=lock_seconds)
 
-    def update_success(self):
-        self.print_info_status("Images successfully read", ignore_lock=True)
-
+    @pyqtSlot(tuple)
     def update_error(self, args):
         data, err = args
 
@@ -123,10 +125,12 @@ class StatusBarManager:
         else:
             raise NotImplementedError
 
+    @pyqtSlot(int, str)
     def update_progress(self, percent: int, message: str):
         self.statusManager.set_update_state(percent)
         self.print_info_status(message)
 
+    @pyqtSlot()
     def finish_reader_success(self):
         self.statusManager.set_success_state()
 

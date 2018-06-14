@@ -407,7 +407,6 @@ class ImageDataListModel(QAbstractItemModel):
         return self.createIndex(row, column, parent.child_list[row])
 
     def connect_status_signals(self, statusBar):
-        self.read_worker.result.connect(statusBar.update_success)
         self.read_worker.error.connect(statusBar.update_error)
         self.read_worker.progress.connect(statusBar.update_progress)
         self.read_worker.finished.connect(statusBar.finish_reader_success)
@@ -416,6 +415,9 @@ class ImageDataListModel(QAbstractItemModel):
 
     @pyqtSlot()
     def update_view(self):
+        # this leads to an error in the console, since there's a hidden
+        # third argument using a QVector<int>. Can't do much about it.
+        # we also can't register it since QVector doesn't exist in PyQt
         self.dataChanged.emit(QModelIndex(), QModelIndex())
 
     def add_dir(self, dir_path: str):

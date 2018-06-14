@@ -27,7 +27,6 @@ class ReadWorker(QObject):
     notified = pyqtSignal(str)
     progress = pyqtSignal(int, str)
     error = pyqtSignal(tuple)
-    result = pyqtSignal(object)
     changed = pyqtSignal()
 
     def __init__(self, data, options, parent=None):
@@ -62,7 +61,7 @@ class ReadWorker(QObject):
 
         try:
             if item.read_data(self.report_scan_progress):
-                self.result.emit(item)
+                self.notified.emit("Images successfully scanned.")
                 self.finished.emit()
         except (FileNotFoundError, InterruptedError) as err:
             self.error.emit((item, err))
