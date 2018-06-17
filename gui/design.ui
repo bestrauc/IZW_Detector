@@ -37,9 +37,8 @@
            <string/>
           </property>
           <property name="icon">
-           <iconset>
-            <normalon>:/images/add-folder-interface-outlined-button.svg</normalon>
-           </iconset>
+           <iconset resource="images.qrc">
+            <normaloff>:/images/icons/add-folder-interface-outlined-button.png</normaloff>:/images/icons/add-folder-interface-outlined-button.png</iconset>
           </property>
           <property name="iconSize">
            <size>
@@ -67,9 +66,8 @@
            <string/>
           </property>
           <property name="icon">
-           <iconset>
-            <normalon>:/images/remove-folder-interface-outlined-button.svg</normalon>
-           </iconset>
+           <iconset resource="images.qrc">
+            <normaloff>:/images/icons/remove-folder-interface-outlined-button.png</normaloff>:/images/icons/remove-folder-interface-outlined-button.png</iconset>
           </property>
           <property name="iconSize">
            <size>
@@ -271,7 +269,7 @@
          </property>
          <property name="icon">
           <iconset resource="images.qrc">
-           <normaloff>:/images/select-folder-interface-outlined-button.svg</normaloff>:/images/select-folder-interface-outlined-button.svg</iconset>
+           <normaloff>:/images/icons/select-folder-interface-outlined-button.png</normaloff>:/images/icons/select-folder-interface-outlined-button.png</iconset>
          </property>
          <property name="iconSize">
           <size>

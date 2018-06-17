@@ -170,7 +170,7 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.startButton.setSizePolicy(sizePolicy)
         self.startButton.setText("")
         icon2 = QtGui.QIcon()
-        icon2.addPixmap(QtGui.QPixmap(":/images/continue-processing.svg"),
+        icon2.addPixmap(QtGui.QPixmap(":/images/icons/continue-processing.png"),
                         QtGui.QIcon.Normal, QtGui.QIcon.On)
         self.startButton.setIcon(icon2)
         self.startButton.setFlat(True)

@@ -282,7 +282,7 @@ class ImageDataListModel(QAbstractItemModel):
         pixmap = QPixmap(20, 20)
         pixmap.fill(QColor(0, 0, 0, 0))
         self.none_icon = QIcon(pixmap)
-        self.prog_icon = QIcon(QPixmap(":/images/hourglass.svg").scaled(20, 20))
+        self.prog_icon = QIcon(QPixmap(":/images/icons/hourglass.png").scaled(20, 20))
 
         # configure reader and start its thread
         self.read_thread = QThread(self)
