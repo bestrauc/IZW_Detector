@@ -2,6 +2,7 @@ from typing import List
 
 import os
 import pathlib
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -225,7 +226,8 @@ def classification_to_dir(out_dir: str, data: pd.DataFrame, labels: List[str]):
                 dst_path = os.path.join(target_dir, row['filename'])
                 # log_out.debug("Copying {} to {}".format(src_path, dst_path))
                 try:
-                    os.symlink(src_path, dst_path)
+                    # os.symlink(src_path, dst_path)
+                    shutil.copy(src_path, dst_path)
                 except FileExistsError as err:
                     log_out.error(err)
 
