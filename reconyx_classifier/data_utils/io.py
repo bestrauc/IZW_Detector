@@ -135,7 +135,8 @@ def read_dir_metadata(dir_path: str, sort_vals=True, progress_callback=None):
     return data
 
 
-def read_training_metadata(dir_path: str, class_dir_names, extend_events=True):
+def read_training_metadata(dir_path: str, class_dir_names, extend_events=True,
+                           relative_paths = False):
     """Read training/validation data from directory 'dir_path'.
 
     The directory should contain some subdirectories corresponding to
@@ -160,8 +161,12 @@ def read_training_metadata(dir_path: str, class_dir_names, extend_events=True):
 
     found_dirs = 0
     data = None
+    if relative_paths:
+        dir_path = os.path.relpath(dir_path)
+
     for dir_name in os.listdir(dir_path):
-        file_path = os.path.join(os.path.abspath(dir_path) + '/' + dir_name)
+        file_path = os.path.join(dir_path, dir_name)
+        print(file_path)
         # skip files that aren't directories
         if not os.path.isdir(file_path):
             continue
