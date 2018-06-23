@@ -11,3 +11,7 @@ results/
 
 # IntelliJ files
 .idea/
+
+# files generated from other files
+reconyx_classifier/design.py
+reconyx_classifier/images_rc.py
