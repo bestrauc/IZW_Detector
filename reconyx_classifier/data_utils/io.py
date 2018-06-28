@@ -107,10 +107,11 @@ def read_dir_metadata(dir_path: str, sort_vals=True, progress_callback=None):
         # skip jpg file with IO issue or without right EXIF tags
         try:
             row = make_exif_dict(file_path, filename)
-        except (IOError, KeyError) as err:
+        except (IOError, KeyError, ValueError) as err:
             log_in.warning("Skipping file '{}' - {} : {}".format(
                 file_name, type(err).__name__, str(err)
             ))
+
             continue
 
         data.append(row)

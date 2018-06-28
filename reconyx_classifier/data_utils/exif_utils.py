@@ -6,8 +6,9 @@ import datetime
 
 import logging
 
-# only ever log warnings from the external exifread library
+# only log warnings from the external exifread library (not debug info, etc.)
 logging.getLogger('exifread').setLevel(logging.WARN)
+exif_log = logging.getLogger("exif_utils")
 
 
 class Info(object):
@@ -21,11 +22,11 @@ class Info(object):
         self.fmt = fmt
 
     def read(self, blob):
-        global INFOS
-        idx = INFOS.index(self)
+        global RECONYX_INFOS
+        idx = RECONYX_INFOS.index(self)
         next_offset = len(blob)
-        if idx + 1 < len(INFOS):
-            next_offset = INFOS[idx + 1].offset
+        if idx + 1 < len(RECONYX_INFOS):
+            next_offset = RECONYX_INFOS[idx + 1].offset
 
         size = next_offset - self.offset
         subbuffer = blob[self.offset:next_offset]
@@ -51,7 +52,7 @@ class Info(object):
 
 
 # global constant with the metadata we want to extract
-INFOS = [
+RECONYX_INFOS = [
     Info("Makernote Version", 0x0000, "H"),
     Info("Firmware Version", 0x0002, "H"),
     Info("Trigger Mode", 0x000c, "2s"),
@@ -72,34 +73,40 @@ INFOS = [
     Info("User Label", 0x0056, "22s"),
 ]
 
+RECONYX_MAKERNOTE_VERSION = 61697
+
 
 def _unpack(makernote):
-    global INFOS
+    global RECONYX_INFOS
 
     makernote_bin = array.array('B', makernote)
 
     res = {}
-    for info in INFOS:
+    for info in RECONYX_INFOS:
         res[info.name] = info.read(makernote_bin.tobytes())
 
     return res
 
 
 def _read_im_exif(file_path):
-    tags = None
-
     with open(file_path, 'rb') as f:
         tags = exifread.process_file(f, stop_tag='EXIF MakerNote')
 
-    # try:
-    #     if str(tags['Image Make']) != 'RECONYX':
-    #         raise ValueError("Not a RECONYX JPG file.")
-    # except KeyError:
-    #     print("Error path: {}".format(file_path))
-    #     raise
+    try:
+        makernote_dict = _unpack(tags['EXIF MakerNote'].values)
+    except KeyError as e:
+        raise KeyError("File has no EXIF MakerNote tag") from e
 
-    # a RECONYX file should have a MakerNote.
-    return _unpack(tags['EXIF MakerNote'].values)
+    # we only consider images with the right Makernote version
+    try:
+        if makernote_dict['Makernote Version'] != RECONYX_MAKERNOTE_VERSION:
+            raise ValueError("Found Makernote Version {} instead of {}".format(
+                makernote_dict['Makernote Version'],
+                RECONYX_MAKERNOTE_VERSION))
+    except KeyError as e:
+        raise KeyError("File has no Makernote Version attribute.") from e
+
+    return makernote_dict
 
 
 def make_exif_dict(image_path, file_name):
@@ -110,7 +117,6 @@ def make_exif_dict(image_path, file_name):
     exif_dict = {
         "filename": file_name,
         "path": image_path,
-        # "set": 'none',
         "datetime": datetime.datetime(Y, M, D, h, m, s),
         "event1": meta["Event Number"][0],
         "event2": meta["Event Number"][1],
