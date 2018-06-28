@@ -270,7 +270,7 @@ class ImageDataListModel(QAbstractItemModel):
         self.options = ClassificationOptions(
             output_dir=os.path.join(os.getcwd(), "output"),
             classification_suffix="labeled",
-            model_path="model/inception-resnet-v2-cheetahs.h5",
+            model_path="model/cheetah_model.hdf5",
             batch_size=16,
             labels=['unknown', 'cheetah', 'leopard']
         )
