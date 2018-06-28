@@ -227,11 +227,16 @@ class ImageData:
         return [node for node in chain(single_dirs, sub_dirs)
                 if node.data.state.value == ProcessState.READ.value]
 
-    def scan_status(self):
+    def dir_status(self):
         single_dirs = [node for node in self._data if not node.child_list]
         sub_dirs = [subnode for node in self._data
                     for subnode in node.child_list
                     if node.child_list]
+
+        return single_dirs, sub_dirs
+
+    def scan_status(self):
+        single_dirs, sub_dirs = self.dir_status()
 
         # all directories have to be processed and at
         # least some have to be completed without error
@@ -456,6 +461,11 @@ class ImageDataListModel(QAbstractItemModel):
 
     def scan_status(self):
         return self._image_data.scan_status()
+
+    def is_classifying(self):
+        single_dirs, sub_dirs = self._image_data.dir_status()
+        return any(node.data.state.value == ProcessState.CLASS_IN_PROG.value
+                   for node in chain(single_dirs, sub_dirs))
 
     def pause_reading(self):
         self._image_data.pause_reading()

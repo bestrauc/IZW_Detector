@@ -296,6 +296,10 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         elif not success:
             self.statusBarManager.print_error_status(
                 "No valid images found during directory scan.", lock_seconds=2)
+        elif self.image_dir_model.is_classifying():
+            self.statusBarManager.print_info_status(
+                "Classification already in progress",
+                color="blue", lock_seconds=2)
         else:
             out_path = self.image_dir_model.options.output_dir
             if not (os.path.exists(out_path) and os.path.isdir(out_path)):
