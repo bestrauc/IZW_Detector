@@ -26,7 +26,7 @@ class ReadWorker(QObject):
     finished = pyqtSignal()
     notified = pyqtSignal(str)
     progress = pyqtSignal(int, str)
-    error = pyqtSignal(tuple)
+    error = pyqtSignal(object)
     changed = pyqtSignal()
 
     def __init__(self, data, options, parent=None):
@@ -60,11 +60,12 @@ class ReadWorker(QObject):
             return
 
         try:
+            self.changed.emit()
             if item.read_data(self.report_scan_progress):
                 self.notified.emit("Images successfully scanned.")
                 self.finished.emit()
         except (FileNotFoundError, InterruptedError) as err:
-            self.error.emit((item, err))
+            self.error.emit(err)
         finally:
             self.changed.emit()
 
@@ -104,9 +105,10 @@ class ReadWorker(QObject):
             except InterruptedError as err:
                 item.state = ProcessState.READ
                 self.changed.emit()
-                self.error.emit((item, err))
+                self.error.emit(err)
 
                 # exit the loop if classification was interrupted
+                self.data.continue_reading()
                 return
 
         self.notified.emit("Classification finished.")

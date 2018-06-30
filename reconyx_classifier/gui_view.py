@@ -114,9 +114,7 @@ class StatusBarManager(QObject):
         self.print_info_status(status_msg, color="red", lock_seconds=lock_seconds)
 
     @pyqtSlot(tuple)
-    def update_error(self, args):
-        data, err = args
-
+    def update_error(self, err):
         if isinstance(err, FileNotFoundError):
             self.statusManager.set_error_state()
             self.print_error_status("Could not find any Reconxy images.")
@@ -219,7 +217,7 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.addDirButton.clicked.connect(self.add_input_dir)
         self.removeDirButton.clicked.connect(self.remove_selected_dirs)
         self.startButton.clicked.connect(self.image_dir_model.continue_processing)
-        self.stopButton.clicked.connect(self.image_dir_model.pause_processing)
+        self.stopButton.clicked.connect(self.pause_processing)
         self.classifyButton.clicked.connect(self.classify_directories)
         self.outputDirButton.clicked.connect(self.set_output_dir)
 
@@ -279,7 +277,19 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.outputDirEdit.setText(input_dir)
         self.image_dir_model.options.output_dir = input_dir
 
+    def pause_processing(self):
+        self.statusBarManager.print_info_status(
+            "Pausing processing..")
+        self.image_dir_model.pause_processing()
+
     def add_input_dir(self):
+        model_state = self.image_dir_model.scan_status()
+        if model_state == ProcessState.CLASS_IN_PROG:
+            self.statusBarManager.print_info_status(
+                "Cannot add directories while classification in progress.",
+                color="blue", lock_seconds=2)
+            return
+
         # let the user select the target directory
         input_dir = QFileDialog.getExistingDirectory(
             caption="Select input directory.")
@@ -287,7 +297,28 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.image_dir_model.add_dir(input_dir)
         self.directoryList.expandAll()
 
+    def remove_selected_dirs(self):
+        model_state = self.image_dir_model.scan_status()
+        if model_state == ProcessState.CLASS_IN_PROG:
+            self.statusBarManager.print_info_status(
+                "Cannot remove directories while classification in progress.",
+                color="blue", lock_seconds=2)
+            return
+
+        selected_idx = [QPersistentModelIndex(index) for index in
+                        self.directoryList.selectionModel().selectedIndexes()
+                        if index.column() == 0]
+
+        for i, index in enumerate(selected_idx):
+            self.image_dir_model.del_dir(QModelIndex(index))
+
     def classify_directories(self):
+        if self.image_dir_model.is_paused():
+            self.statusBarManager.print_info_status(
+                "Please scan all directories before classification.",
+                color="blue", lock_seconds=2)
+            return
+
         model_state = self.image_dir_model.scan_status()
 
         if model_state == ProcessState.READ_IN_PROG:
@@ -317,10 +348,6 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
                     "Please select an empty output directory.")
                 return
 
-            self.image_dir_model.continue_processing()
-            # ready to scan
-            self.addDirButton.setEnabled(False)
-            self.removeDirButton.setEnabled(False)
             self.image_dir_model.start_classification()
             self.statusBarManager.print_info_status("Starting classification..")
             self.statusManager.set_busy_state()
@@ -328,12 +355,3 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
             self.statusBarManager.print_info_status(
                 "All directories already classified.",
                 color="blue", lock_seconds=2)
-
-
-    def remove_selected_dirs(self):
-        selected_idx = [QPersistentModelIndex(index) for index in
-                        self.directoryList.selectionModel().selectedIndexes()
-                        if index.column() == 0]
-
-        for i, index in enumerate(selected_idx):
-            self.image_dir_model.del_dir(QModelIndex(index))

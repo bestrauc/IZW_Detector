@@ -121,7 +121,7 @@ def read_dir_metadata(dir_path: str, sort_vals=True, progress_callback=None):
         if progress_callback and (i % prog_step) == 0:
             continue_signal = progress_callback(i / float(max_files) * 100)
             if not continue_signal:
-                raise InterruptedError("Processing stopped.")
+                raise InterruptedError("Directory scan interrupted.")
 
     if len(data) == 0:
         raise FileNotFoundError("No Reconxy image files found in directory")

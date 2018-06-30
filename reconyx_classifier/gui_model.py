@@ -122,7 +122,6 @@ class ImageData:
         self._unpause_signal = QWaitCondition()
         # processing state
         self._paused = False
-        self._active_item = None
 
     def __len__(self):
         return len(self._data)
@@ -177,7 +176,7 @@ class ImageData:
         for child_item in ([item] + item.child_list):
             if not child_item.data.process_lock.tryLock():
                 # signal end and wait for the lock
-                self._active_item = None
+                self.pause_reading()
                 child_item.data.process_lock.lock()
 
         keep_root = True
@@ -205,19 +204,19 @@ class ImageData:
             self._unpause_lock.unlock()
 
         self._data_lock.lock()
-        self._active_item = None
+        active_item = None
         # naively iterate through the dictionary to get next task
         # (can't easily use a generator since inserts invalidate iterator)
         for parent_dir in self._data:
             for val in (parent_dir.child_list or [parent_dir]):
                 if val.data.state == ProcessState.QUEUED:
                     self.model.update_view()
-                    self._active_item = val.data
+                    active_item = val.data
                     break
 
         self._data_lock.unlock()
 
-        return self._active_item
+        return active_item
 
     def get_scanned_dirs(self):
         single_dirs = [node for node in self._data if not node.child_list]
@@ -228,16 +227,21 @@ class ImageData:
         return [node for node in chain(single_dirs, sub_dirs)
                 if node.data.state.value == ProcessState.READ.value]
 
-    def dir_status(self):
+    def dir_states(self):
         single_dirs = [node for node in self._data if not node.child_list]
         sub_dirs = [subnode for node in self._data
                     for subnode in node.child_list
                     if node.child_list]
 
-        return single_dirs, sub_dirs
+        state_freqs = Counter([node.data.state.value for node
+                               in chain(single_dirs, sub_dirs)])
+
+        return state_freqs
 
     def scan_status(self) -> ProcessState:
         """Returns processing state about the directories currently listed.
+
+        Condition: Do not call scan_status while self._paused is True.
 
         :return: ProcessState
         We return a ProcessState enum for all items, defined as follows:
@@ -251,20 +255,21 @@ class ImageData:
         CLASSIFIED      - all items were classified, at least one successfully
         """
 
-        single_dirs, sub_dirs = self.dir_status()
-        state_freqs = Counter([node.data.state.value for node
-                               in chain(single_dirs, sub_dirs)])
+        state_freqs = self.dir_states()
 
         elem_count = sum(state_freqs.values())
 
-        # first, eliminate states that reached a final state
-        # if all elements reached a final state, return it as the result
+        # first, eliminate states that reached a final classification state
+        elem_count -= state_freqs[ProcessState.CLASSIFIED.value]
 
         if state_freqs[ProcessState.QUEUED.value] == elem_count:
             return ProcessState.QUEUED
 
         if state_freqs[ProcessState.READ_IN_PROG.value] > 0:
             return ProcessState.READ_IN_PROG
+
+        # at this point, no elements should be QUEUED or READ_IN_PROG
+        # unless the program was paused. This function assumes no pauses.
 
         # eliminate those elements that failed
         elem_count -= state_freqs[ProcessState.FAILED.value]
@@ -279,10 +284,7 @@ class ImageData:
         if state_freqs[ProcessState.CLASS_IN_PROG.value] > 0:
             return ProcessState.CLASS_IN_PROG
 
-        # at this point, some elements must be classified
-        if state_freqs[ProcessState.CLASSIFIED.value] > 0:
-            return ProcessState.CLASSIFIED
-
+        # this point should theoretically not be reached
         gui_log.error("Scan status in undefined state: {}".format(state_freqs))
 
     def is_paused(self) -> bool:
@@ -290,7 +292,6 @@ class ImageData:
 
     def pause_reading(self):
         self._paused = True
-        self._active_item = None
 
     def continue_reading(self):
         self._paused = False
@@ -497,8 +498,14 @@ class ImageDataListModel(QAbstractItemModel):
         if not keep_root:
             self.del_dir(parent_index)
 
+        # del_dir may pause processing to remove directories safely, resume
+        self.continue_processing()
+
     def scan_status(self):
         return self._image_data.scan_status()
+
+    def is_paused(self):
+        return self._image_data.is_paused()
 
     def pause_processing(self):
         self._image_data.pause_reading()
