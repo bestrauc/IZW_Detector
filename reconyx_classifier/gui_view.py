@@ -3,6 +3,7 @@ from PyQt5.QtWidgets import *
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from gui_model import ImageDataListModel
+from gui_utils import ProcessState
 
 import time
 import os
@@ -217,8 +218,8 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         # set GUI logic callbacks
         self.addDirButton.clicked.connect(self.add_input_dir)
         self.removeDirButton.clicked.connect(self.remove_selected_dirs)
-        self.startButton.clicked.connect(self.image_dir_model.continue_reading)
-        self.stopButton.clicked.connect(self.image_dir_model.pause_reading)
+        self.startButton.clicked.connect(self.image_dir_model.continue_processing)
+        self.stopButton.clicked.connect(self.image_dir_model.pause_processing)
         self.classifyButton.clicked.connect(self.classify_directories)
         self.outputDirButton.clicked.connect(self.set_output_dir)
 
@@ -287,20 +288,24 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
         self.directoryList.expandAll()
 
     def classify_directories(self):
-        scanned, success = self.image_dir_model.scan_status()
+        model_state = self.image_dir_model.scan_status()
 
-        if not scanned:
+        if model_state == ProcessState.READ_IN_PROG:
             self.statusBarManager.print_info_status(
                 "Please wait for directory scans to finish.",
                 color="blue", lock_seconds=2)
-        elif not success:
+        elif model_state == ProcessState.QUEUED:
+            self.statusBarManager.print_info_status(
+                "Please add directories to classify",
+                color="blue", lock_seconds=2)
+        elif model_state == ProcessState.FAILED:
             self.statusBarManager.print_error_status(
                 "No valid images found during directory scan.", lock_seconds=2)
-        elif self.image_dir_model.is_classifying():
+        elif model_state == ProcessState.CLASS_IN_PROG:
             self.statusBarManager.print_info_status(
                 "Classification already in progress",
                 color="blue", lock_seconds=2)
-        else:
+        elif model_state == ProcessState.READ:
             out_path = self.image_dir_model.options.output_dir
             if not (os.path.exists(out_path) and os.path.isdir(out_path)):
                 self.statusBarManager.print_error_status(
@@ -312,13 +317,18 @@ class ClassificationApp(QMainWindow, design.Ui_MainWindow):
                     "Please select an empty output directory.")
                 return
 
-            self.image_dir_model.continue_reading()
+            self.image_dir_model.continue_processing()
             # ready to scan
             self.addDirButton.setEnabled(False)
             self.removeDirButton.setEnabled(False)
             self.image_dir_model.start_classification()
             self.statusBarManager.print_info_status("Starting classification..")
             self.statusManager.set_busy_state()
+        elif model_state == ProcessState.CLASSIFIED:
+            self.statusBarManager.print_info_status(
+                "All directories already classified.",
+                color="blue", lock_seconds=2)
+
 
     def remove_selected_dirs(self):
         selected_idx = [QPersistentModelIndex(index) for index in

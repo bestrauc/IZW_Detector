@@ -2,6 +2,7 @@ from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
 from itertools import chain
+from collections import Counter
 
 from gui_utils import ReadWorker, ProcessState
 from data_utils.io import read_dir_metadata
@@ -11,7 +12,7 @@ from typing import Callable
 import os
 
 import logging
-gui_log = logging.getLogger("gui")
+gui_log = logging.getLogger("gui_model")
 
 
 class ClassificationOptions:
@@ -235,17 +236,54 @@ class ImageData:
 
         return single_dirs, sub_dirs
 
-    def scan_status(self):
+    def scan_status(self) -> ProcessState:
+        """Returns processing state about the directories currently listed.
+
+        :return: ProcessState
+        We return a ProcessState enum for all items, defined as follows:
+        QUEUED  - no item has been processed yet, they are just queued.
+        READ_IN_PROG    - at least one item is currently being read.
+        READ    - all items were scanned and at least one was successfully read.
+        FAILED  - after finishing reading, no item was successfully read.
+
+        The following states can only occur after state READ was reached:
+        CLASS_IN_PROG   - at least one item is currently being classified
+        CLASSIFIED      - all items were classified, at least one successfully
+        """
+
         single_dirs, sub_dirs = self.dir_status()
+        state_freqs = Counter([node.data.state.value for node
+                               in chain(single_dirs, sub_dirs)])
 
-        # all directories have to be processed and at
-        # least some have to be completed without error
-        scanned = all([node.data.state.value > 1
-                       for node in chain(single_dirs, sub_dirs)])
-        success = any([node.data.state.value == ProcessState.READ.value
-                       for node in chain(single_dirs, sub_dirs)])
+        elem_count = sum(state_freqs.values())
 
-        return scanned, success
+        # first, eliminate states that reached a final state
+        # if all elements reached a final state, return it as the result
+
+        if state_freqs[ProcessState.QUEUED.value] == elem_count:
+            return ProcessState.QUEUED
+
+        if state_freqs[ProcessState.READ_IN_PROG.value] > 0:
+            return ProcessState.READ_IN_PROG
+
+        # eliminate those elements that failed
+        elem_count -= state_freqs[ProcessState.FAILED.value]
+        if elem_count == 0:
+            # all elements failed
+            return ProcessState.FAILED
+
+        # if the non-failing elements are all in READ state
+        if state_freqs[ProcessState.READ.value] == elem_count:
+            return ProcessState.READ
+
+        if state_freqs[ProcessState.CLASS_IN_PROG.value] > 0:
+            return ProcessState.CLASS_IN_PROG
+
+        # at this point, some elements must be classified
+        if state_freqs[ProcessState.CLASSIFIED.value] > 0:
+            return ProcessState.CLASSIFIED
+
+        gui_log.error("Scan status in undefined state: {}".format(state_freqs))
 
     def is_paused(self) -> bool:
         return self._paused
@@ -462,15 +500,10 @@ class ImageDataListModel(QAbstractItemModel):
     def scan_status(self):
         return self._image_data.scan_status()
 
-    def is_classifying(self):
-        single_dirs, sub_dirs = self._image_data.dir_status()
-        return any(node.data.state.value == ProcessState.CLASS_IN_PROG.value
-                   for node in chain(single_dirs, sub_dirs))
-
-    def pause_reading(self):
+    def pause_processing(self):
         self._image_data.pause_reading()
 
-    def continue_reading(self):
+    def continue_processing(self):
         self._image_data.continue_reading()
 
     def start_classification(self):
