@@ -5,7 +5,7 @@ import sys
 from enum import Enum
 
 from data_utils.classifier import ImageClassifier
-from data_utils.io import classification_to_dir
+from data_utils.io import classification_to_dir, get_unique_dir
 
 import logging
 thread_log = logging.getLogger("worker")
@@ -108,6 +108,7 @@ class ReadWorker(QObject):
                 self.error.emit(err)
 
                 # exit the loop if classification was interrupted
+                # unpause the reading process so new directories could be added
                 self.data.continue_reading()
                 return
 

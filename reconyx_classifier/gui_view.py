@@ -53,10 +53,13 @@ class StatusWidgetManager:
         self.reset_state()
         self.statusWidget.hide()
 
-    def set_interrupted_state(self):
+    def set_interrupted_state(self, show_resume=True):
         """Disable progress and show restart button to indicate interrupt."""
         self.reset_state()
-        self.statusChanger.setCurrentIndex(0)
+        if show_resume:
+            self.statusChanger.setCurrentIndex(0)
+        else:
+            self.statusChanger.hide()
         self.progressBar.setEnabled(False)
 
     def set_update_state(self, percent):
@@ -68,7 +71,7 @@ class StatusWidgetManager:
         self.progressBar.setValue(percent)
 
     def set_success_state(self):
-        """Hide start/stop buttons and indicate complete p   rogress."""
+        """Hide start/stop buttons and indicate complete progress."""
         self.reset_state()
         self.statusChanger.hide()
         self.progressBar.setValue(100)
@@ -119,7 +122,9 @@ class StatusBarManager(QObject):
             self.statusManager.set_error_state()
             self.print_error_status("Could not find any Reconxy images.")
         elif isinstance(err, InterruptedError):
-            self.statusManager.set_interrupted_state()
+            # if the interrupt came from the directory scan, show resume button
+            resumable = "Directory" in str(err)
+            self.statusManager.set_interrupted_state(show_resume=resumable)
             self.print_info_status(str(err), ignore_lock=True)
         else:
             raise NotImplementedError

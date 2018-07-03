@@ -203,6 +203,19 @@ def read_training_metadata(dir_path: str, class_dir_names, extend_events=True,
     return data
 
 
+def get_unique_dir(target_path):
+    num = 1
+    unique_ext = ''
+    while os.path.exists(target_path + unique_ext):
+        unique_ext = "_{}".format(num)
+        num += 1
+
+    if unique_ext != '':
+        log_out.warning("Directory exists, appending {}".format(num))
+
+    return target_path + unique_ext
+
+
 def classification_to_dir(out_dir: str, data: pd.DataFrame, labels: List[str]):
     """Copy the labeled data to the output directory.
 
@@ -220,6 +233,7 @@ def classification_to_dir(out_dir: str, data: pd.DataFrame, labels: List[str]):
         label_data = data[data.label == index]
         if len(label_data) > 0:
             log_out.info("Creating class directory {}".format(target_dir))
+
             try:
                 pathlib.Path(target_dir).mkdir(parents=True, exist_ok=True)
                 # os.mkdir(target_dir)
