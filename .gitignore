@@ -8,6 +8,8 @@ __pycache__/
 # local project file
 data/
 results/
+models/
+web_demo/cheetah_tf_serving/models
 
 # IntelliJ files
 .idea/
